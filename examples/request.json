@@ -1,0 +1,36 @@
+{
+  "privacidade": {
+    "rfb": {
+      "id_template": "arkhe-template-v1"
+    },
+    "senatran": {
+      "token": "token-interno-opcional",
+      "cnpj_anuente": "cnpj-opcional"
+    }
+  },
+  "cpf": "52998224725",
+  "validacao": {
+    "nome": "Joao Arkhe Mock",
+    "nome_social": null,
+    "data_nascimento": "2000-01-01",
+    "sexo": "M",
+    "nacionalidade": 1,
+    "nome_mae": "Maria Arkhe Mock",
+    "nome_pai": "Jose Arkhe Mock",
+    "rfb": {
+      "situacao_cpf": "regular",
+      "data_inscricao_cpf": null
+    },
+    "documento": {
+      "tipo": 1,
+      "numero": "123456789",
+      "orgao_expedidor": "SSP",
+      "uf_expedidor": "SP"
+    }
+  },
+  "biometria_facial": {
+    "imagem": "BASE64_DA_SELFIE_DE_TESTE_CONSENTIDA",
+    "vivacidade": false
+  },
+  "tag": "cadastro-banco-arkhe"
+}

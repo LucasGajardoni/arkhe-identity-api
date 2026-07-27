@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arkhe Identity Admin</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Arkhe Identity Admin</h1>
+    <span>Base privada academica</span>
+  </header>
+  <main class="layout">
+    <section class="panel auth">
+      <h2>Autenticacao</h2>
+      <label>Usuario <input id="loginUser" value="admin"></label>
+      <label>Senha <input id="loginPass" type="password"></label>
+      <button id="loginBtn">Entrar</button>
+    </section>
+
+    <section class="panel">
+      <h2>Consentimento biometrico</h2>
+      <p>Dados pessoais, documento e um vetor biometrico facial serao coletados para prova de conceito academica privada. A comparacao ocorre somente com a base cadastrada no ambiente Banco Arkhe. Nao ha consulta a orgaos publicos, nao e prova de vida e nao representa um banco real.</p>
+      <p>A retencao segue o periodo do TCC ou ate solicitacao de exclusao. Acesso restrito aos responsaveis pelo teste. Use somente participantes que concordaram expressamente.</p>
+      <label class="check"><input id="consent" type="checkbox"> Li e aceitei o termo de consentimento.</label>
+    </section>
+
+    <section class="panel">
+      <h2>Cadastro de pessoa</h2>
+      <form id="personForm" class="grid">
+        <label>CPF <input name="cpf" data-mask="cpf" placeholder="000.000.000-00" required></label>
+        <label>Nome completo <input name="nome" required></label>
+        <label>Nome social <input name="nome_social"></label>
+        <label>Nascimento <input name="data_nascimento" type="date" required></label>
+        <label>Sexo <select name="sexo"><option>M</option><option>F</option><option>O</option></select></label>
+        <label>Nacionalidade <select name="nacionalidade"><option value="1">Brasileiro</option><option value="2">Brasileiro naturalizado</option><option value="3">Estrangeiro</option><option value="4">Brasileiro nascido no exterior</option></select></label>
+        <label>Nome da mae <input name="nome_mae"></label>
+        <label>Nome do pai <input name="nome_pai"></label>
+        <label>Situacao interna <select name="situacao_cpf_interna"><option value="regular">regular</option><option value="pendente">pendente</option><option value="bloqueado">bloqueado</option></select></label>
+        <label>Email <input name="email" type="email"></label>
+        <label>Telefone <input name="telefone" data-mask="phone" placeholder="(11) 99999-9999"></label>
+      </form>
+      <button id="savePerson">Cadastrar pessoa</button>
+      <output id="personOut"></output>
+    </section>
+
+    <section class="panel">
+      <h2>Documento</h2>
+      <form id="docForm" class="grid">
+        <label>ID pessoa <input name="person_id" required></label>
+        <label>Tipo <select name="tipo" id="docType"><option>RG</option><option>CIN</option><option>CNH</option><option>PASSAPORTE</option><option>CRNM</option><option>OUTRO</option></select></label>
+        <label>Numero <input name="numero" required></label>
+        <label>Orgao expedidor <input name="orgao_expedidor"></label>
+        <label>UF expedidora <select name="uf_expedidor"><option></option><option>AC</option><option>AL</option><option>AP</option><option>AM</option><option>BA</option><option>CE</option><option>DF</option><option>ES</option><option>GO</option><option>MA</option><option>MT</option><option>MS</option><option>MG</option><option>PA</option><option>PB</option><option>PR</option><option>PE</option><option>PI</option><option>RJ</option><option>RN</option><option>RS</option><option>RO</option><option>RR</option><option>SC</option><option>SP</option><option>SE</option><option>TO</option></select></label>
+        <label>Pais emissor <input name="pais_emissor" value="BR"></label>
+        <label>Emissao <input name="data_emissao" type="date"></label>
+        <label>Validade <input name="data_validade" type="date"></label>
+      </form>
+      <button id="saveDoc">Adicionar documento</button>
+    </section>
+
+    <section class="panel">
+      <h2>Referencia facial</h2>
+      <p>Rosto centralizado, boa iluminacao, sem outra pessoa, sem filtros, sem oculos escuros, camera na altura dos olhos.</p>
+      <div class="camera">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas" width="480" height="360"></canvas>
+      </div>
+      <label>ID pessoa <input id="facePersonId"></label>
+      <input id="faceUpload" type="file" accept="image/png,image/jpeg,image/webp">
+      <button id="startCam">Abrir camera</button>
+      <button id="capture">Capturar</button>
+      <button id="saveFace">Cadastrar biometria</button>
+      <output id="faceOut"></output>
+    </section>
+
+    <section class="panel wide">
+      <h2>Pessoas cadastradas</h2>
+      <button id="refreshPeople">Atualizar</button>
+      <table><thead><tr><th>CPF</th><th>Nome</th><th>Status</th><th>Biometria</th><th>ID</th></tr></thead><tbody id="peopleBody"></tbody></table>
+    </section>
+  </main>
+  <script src="/static/admin.js"></script>
+</body>
+</html>

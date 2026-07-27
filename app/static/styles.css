@@ -1,0 +1,39 @@
+:root {
+  --bg: #f5f6f8;
+  --ink: #17202a;
+  --muted: #627083;
+  --line: #d9dee7;
+  --panel: #ffffff;
+  --accent: #0f766e;
+  --accent-2: #b42318;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Inter, Segoe UI, Arial, sans-serif; background: var(--bg); color: var(--ink); }
+.topbar { display: flex; align-items: baseline; justify-content: space-between; padding: 18px 28px; background: #13202b; color: white; }
+.topbar h1 { margin: 0; font-size: 22px; letter-spacing: 0; }
+.topbar span { color: #c8d2de; }
+.layout { display: grid; grid-template-columns: repeat(2, minmax(320px, 1fr)); gap: 18px; padding: 22px; max-width: 1280px; margin: auto; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px; box-shadow: 0 1px 2px rgba(10, 20, 30, .04); }
+.panel h2 { margin: 0 0 14px; font-size: 18px; }
+.wide { grid-column: 1 / -1; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 12px; }
+label { display: grid; gap: 5px; font-size: 13px; color: var(--muted); }
+input, select { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 10px; font: inherit; color: var(--ink); background: white; }
+button { border: 0; border-radius: 6px; padding: 10px 14px; margin: 12px 8px 0 0; background: var(--accent); color: white; font-weight: 700; cursor: pointer; }
+button:hover { filter: brightness(.95); }
+.check { display: flex; grid-template-columns: auto 1fr; align-items: center; gap: 8px; color: var(--ink); }
+.check input { width: auto; }
+.camera { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+video, canvas { width: 100%; aspect-ratio: 4 / 3; border: 1px solid var(--line); border-radius: 6px; background: #0b1117; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; border-bottom: 1px solid var(--line); padding: 9px; font-size: 13px; }
+pre { white-space: pre-wrap; background: #101820; color: #e7eef6; padding: 14px; border-radius: 8px; overflow: auto; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.card { border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.ok { color: var(--accent); }
+.bad { color: var(--accent-2); }
+@media (max-width: 760px) {
+  .layout, .grid, .camera { grid-template-columns: 1fr; }
+  .topbar { display: grid; gap: 4px; }
+}

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Banco Arkhe - Cliente de Teste</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Banco Arkhe</h1>
+    <span>Simulador de validacao</span>
+  </header>
+  <main class="layout">
+    <section class="panel">
+      <h2>Dados enviados ao provedor</h2>
+      <form id="validateForm" class="grid">
+        <label>API key <input name="api_key" type="password" value="local-dev-api-key"></label>
+        <label>CPF <input name="cpf" data-mask="cpf" required></label>
+        <label>Nome <input name="nome" required></label>
+        <label>Nascimento <input name="data_nascimento" type="date" required></label>
+        <label>Sexo <select name="sexo"><option>M</option><option>F</option><option>O</option></select></label>
+        <label>Nacionalidade <select name="nacionalidade"><option value="1">Brasileiro</option><option value="2">Brasileiro naturalizado</option><option value="3">Estrangeiro</option><option value="4">Brasileiro nascido no exterior</option></select></label>
+        <label>Nome da mae <input name="nome_mae"></label>
+        <label>Nome do pai <input name="nome_pai"></label>
+        <label>Documento <input name="documento"></label>
+        <label>Orgao <input name="orgao_expedidor" value="SSP"></label>
+        <label>UF <input name="uf_expedidor" maxlength="2" value="SP"></label>
+      </form>
+      <div class="camera">
+        <video id="clientVideo" autoplay playsinline></video>
+        <canvas id="clientCanvas" width="480" height="360"></canvas>
+      </div>
+      <button id="clientCam">Abrir camera</button>
+      <button id="clientCapture">Capturar selfie</button>
+      <button id="validateBtn">Validar</button>
+    </section>
+    <section class="panel">
+      <h2>Resultado</h2>
+      <div id="cards" class="cards"></div>
+      <pre id="jsonOut">{}</pre>
+    </section>
+  </main>
+  <script src="/static/client.js"></script>
+</body>
+</html>
