@@ -16,10 +16,11 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY . .
-RUN python scripts/download_face_models.py
+RUN chmod +x scripts/start.sh \
+    && python scripts/download_face_models.py
 RUN useradd --create-home --shell /usr/sbin/nologin arkhe \
     && chown -R arkhe:arkhe /app
 USER arkhe
 
 EXPOSE 8000
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers"]
+ENTRYPOINT ["/app/scripts/start.sh"]
