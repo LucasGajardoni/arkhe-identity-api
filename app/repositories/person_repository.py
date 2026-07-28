@@ -8,6 +8,7 @@ from app.core.security import decrypt_text, encrypt_text, lookup_hmac, mask_cpf
 from app.db.models import ConsentRecord, FacialReference, IdentityDocument, Person
 from app.schemas.admin import DocumentCreate, PersonCreate, PersonListItem, PersonUpdate
 from app.services.cpf import only_digits
+from app.services.normalization import normalize_text
 
 
 class PersonRepository:
@@ -28,8 +29,6 @@ class PersonRepository:
             nome_pai=data.nome_pai,
             situacao_cpf_interna=data.situacao_cpf_interna,
             data_inscricao_cpf=data.data_inscricao_cpf,
-            email=data.email,
-            telefone=data.telefone,
             status=data.status,
             consentimento_aceito_em=datetime.now(UTC) if data.consentimento.consentimento_aceito else None,
             versao_termo_consentimento=data.consentimento.versao_termo if data.consentimento.consentimento_aceito else None,
@@ -51,6 +50,7 @@ class PersonRepository:
         stmt = (
             select(Person)
             .options(selectinload(Person.documents), selectinload(Person.facial_references), selectinload(Person.consents))
+            .execution_options(populate_existing=True)
             .where(Person.cpf_hash == lookup_hmac(only_digits(cpf)))
         )
         return self.db.scalar(stmt)
@@ -59,6 +59,7 @@ class PersonRepository:
         stmt = (
             select(Person)
             .options(selectinload(Person.documents), selectinload(Person.facial_references), selectinload(Person.consents))
+            .execution_options(populate_existing=True)
             .where(Person.id == person_id)
         )
         return self.db.scalar(stmt)
@@ -88,20 +89,34 @@ class PersonRepository:
         return person
 
     def add_document(self, person: Person, data: DocumentCreate) -> IdentityDocument:
+        normalized_number = self.normalize_document_value(data.numero)
+        if data.principal:
+            for existing in person.documents:
+                if existing.principal:
+                    existing.principal = False
         doc = IdentityDocument(
-            person_id=person.id,
-            tipo=data.tipo,
-            numero_encrypted=encrypt_text(data.numero) or "",
-            numero_hash=lookup_hmac(data.numero.strip().upper()),
-            orgao_expedidor=data.orgao_expedidor,
-            uf_expedidor=data.uf_expedidor,
-            pais_emissor=data.pais_emissor,
+            person=person,
+            tipo=data.tipo.value,
+            numero_encrypted=encrypt_text(normalized_number) or "",
+            numero_hash=lookup_hmac(normalized_number),
+            orgao_expedidor=self.normalize_document_text(data.orgao_expedidor),
+            uf_expedidor=self.normalize_document_text(data.uf_expedidor),
+            pais_emissor=self.normalize_document_text(data.pais_emissor),
             data_emissao=data.data_emissao,
             data_validade=data.data_validade,
             principal=data.principal,
         )
         self.db.add(doc)
         return doc
+
+    @staticmethod
+    def normalize_document_value(value: str | None) -> str:
+        return "".join(character for character in (value or "").upper() if character.isalnum())
+
+    @staticmethod
+    def normalize_document_text(value: str | None) -> str | None:
+        normalized = normalize_text(value) if value else ""
+        return normalized.upper() or None
 
     def active_facial_reference(self, person: Person) -> FacialReference | None:
         refs = [ref for ref in person.facial_references if ref.revogado_em is None]

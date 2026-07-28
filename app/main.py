@@ -2,18 +2,15 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 
-from app.api import admin, health, validation
+from app.api import admin, health, identity, validation
 from app.core.config import get_settings
 from app.core.logging import configure_logging
+from app.core.rate_limit import limiter
 
 configure_logging()
 settings = get_settings()
-limiter = Limiter(key_func=get_remote_address)
-
 app = FastAPI(
     title="Arkhe Identity API",
     description=(
@@ -21,6 +18,9 @@ app = FastAPI(
         "privada previamente cadastrada no ambiente Banco Arkhe."
     ),
     version="0.1.0",
+    docs_url="/docs" if settings.enable_api_docs else None,
+    redoc_url="/redoc" if settings.enable_api_docs else None,
+    openapi_url="/openapi.json" if settings.enable_api_docs else None,
 )
 app.state.limiter = limiter
 
@@ -34,6 +34,7 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.include_router(health.router)
 app.include_router(validation.router)
+app.include_router(identity.router)
 app.include_router(admin.router)
 
 

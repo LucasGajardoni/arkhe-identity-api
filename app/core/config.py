@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,6 +35,42 @@ class Settings(BaseSettings):
     face_backend: str = "opencv"
     face_detector_model_path: str = "models/face_detection_yunet_2023mar.onnx"
     face_recognizer_model_path: str = "models/face_recognition_sface_2021dec.onnx"
+    enable_api_docs: bool = True
+    admin_login_rate_limit: str = "20/minute"
+    identity_validation_rate_limit: str = "120/minute"
+    v5_validation_rate_limit: str = "120/minute"
+
+    @model_validator(mode="after")
+    def reject_insecure_production_defaults(self):
+        if self.environment.lower() not in {"production", "prod"}:
+            return self
+        insecure_markers = ("development-only", "change-me", "replace", "gerar_com", "local-dev")
+        secrets = {
+            "DATA_ENCRYPTION_KEY": self.data_encryption_key,
+            "LOOKUP_HMAC_KEY": self.lookup_hmac_key,
+            "JWT_SECRET": self.jwt_secret,
+            "ADMIN_PASSWORD_HASH": self.admin_password_hash,
+            "API_KEY_HASH": self.api_key_hash,
+        }
+        invalid = [
+            name
+            for name, value in secrets.items()
+            if not value or any(marker in value.lower() for marker in insecure_markers)
+        ]
+        if self.api_key_plaintext_for_local_only:
+            invalid.append("API_KEY_PLAINTEXT_FOR_LOCAL_ONLY")
+        if self.face_backend.lower() == "fake":
+            invalid.append("FACE_BACKEND")
+        if "*" in self.cors_origin_list:
+            invalid.append("CORS_ORIGINS")
+        database_url = self.database_url.lower()
+        if not database_url.startswith("postgresql+psycopg://") or "@localhost" in database_url:
+            invalid.append("DATABASE_URL")
+        if invalid:
+            raise ValueError(
+                "Configuração insegura para produção: " + ", ".join(sorted(set(invalid)))
+            )
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:

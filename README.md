@@ -1,43 +1,85 @@
 # Arkhe Identity API
 
-Provedor interno, privado e academico de validacao de identidade para o TCC do Banco Arkhe.
+Serviço independente de verificação de identidade baseado em uma base privada
+previamente formada e consentida. Pode ser consumido por qualquer aplicação que
+precise confirmar `CPF + documento oficial + selfie`.
 
-Frase correta para apresentar o resultado:
+A API não é um cadastro bancário, CRM ou cadastro de clientes. Telefone, e-mail,
+endereço, conta, saldo e outros dados de relacionamento pertencem ao sistema
+consumidor.
 
-> Os dados e a biometria foram comparados com a base privada previamente cadastrada no ambiente Banco Arkhe.
+> A comparação ocorre somente com a base privada cadastrada neste serviço.
 
-Este projeto nao consulta Receita Federal, Senatran, Renach ou qualquer base governamental. Ele nao prova existencia oficial de uma pessoa, nao implementa prova de vida e nao substitui o Datavalid oficial.
+O projeto não consulta Receita Federal, Senatran, Renach ou outra base
+governamental, não implementa prova de vida e não é uma integração oficial com
+Datavalid.
 
 ## Arquitetura
 
-- FastAPI + Uvicorn
-- SQLAlchemy 2 + Alembic
-- PostgreSQL em desenvolvimento/producao
-- SQLite somente em testes automatizados
-- AES-GCM para dados recuperaveis
-- HMAC-SHA-256 para indices pesquisaveis de CPF/documento
-- OpenCV YuNet + SFace para deteccao e embeddings faciais locais
-- Admin HTML/CSS/JS simples em `/admin`
-- Cliente de teste Banco Arkhe em `/admin/cliente-teste`
-- Provider intercambiavel via `IDENTITY_PROVIDER`
+- FastAPI + Uvicorn;
+- SQLAlchemy 2 + Alembic;
+- PostgreSQL em desenvolvimento e produção;
+- SQLite em testes automatizados;
+- AES-GCM para dados recuperáveis;
+- HMAC-SHA-256 para pesquisa de CPF e documento;
+- OpenCV YuNet + SFace para detecção e embeddings faciais locais;
+- painel administrativo em `/admin`;
+- API genérica recomendada em `/v1/identity/validate`;
+- camada V5 temporária de compatibilidade em `/v5/pessoa-fisica/validacao`.
 
-## Biblioteca Facial
+A política central de validação fica no `IdentityValidationService`. A API
+genérica usa diretamente essa política. A rota V5 converte sua entrada para o
+contrato central e adapta o resultado ao formato antigo.
 
-A implementacao real usa OpenCV contrib:
+## Dados armazenados
 
-- detector: YuNet `face_detection_yunet_2023mar.onnx`
-- reconhecedor: SFace `face_recognition_sface_2021dec.onnx`
-- metrica: cosseno sobre embedding normalizado, convertido para similaridade 0..1
-- licenca: OpenCV e opencv_zoo usam Apache License 2.0
+O serviço mantém apenas dados necessários à identidade:
 
-Motivo da escolha: possui wheels pre-compilados para Windows/Linux, roda em Docker, gera embeddings localmente e nao envia imagens a servicos externos. A alternativa `insightface==0.7.3` foi testada no Windows/Python 3.12 e falhou por exigir Microsoft C++ Build Tools para compilar extensao nativa.
+- CPF criptografado e hash pesquisável;
+- dados civis essenciais;
+- documentos oficiais;
+- referência facial em forma de embedding criptografado;
+- consentimentos;
+- tentativas de validação.
 
-Limites: o limiar facial padrao e experimental. Use `scripts/calibrate_threshold.py` com pares genuinos/impostores consentidos antes de usar qualquer valor como regra final.
+As colunas antigas `email` e `telefone` permanecem fisicamente no banco somente
+para compatibilidade. Elas estão obsoletas, não são aceitas pelos schemas
+administrativos e não participam de nenhuma decisão. Uma remoção futura deve ser
+feita por migration específica e não destrutiva.
 
-## Instalar no Windows
+## Formação da base privada
+
+1. O administrador entra em `/admin`.
+2. Cadastra CPF válido e dados civis essenciais.
+3. Registra o consentimento.
+4. Adiciona um ou mais documentos oficiais.
+5. Cadastra a referência facial por câmera ou upload.
+6. O `person_id` associa os registros somente dentro do serviço.
+
+O UUID interno nunca é exigido de sistemas consumidores.
+
+## Validação por sistemas externos
+
+1. O consumidor envia CPF, documento apresentado e selfie Base64.
+2. A API valida os dígitos do CPF e procura o hash privado.
+3. Confirma pessoa ativa e consentimento vigente.
+4. Localiza documento do mesmo tipo e compara os campos aplicáveis.
+5. Reprova documentos vencidos.
+6. Compara a selfie com a referência facial ativa.
+7. Retorna resultado estruturado e registra a tentativa.
+
+A decisão final é:
+
+```text
+pessoa encontrada e ativa
+E consentimento vigente
+E documento confirmado
+E biometria confirmada
+```
+
+## Instalação local no Windows
 
 ```powershell
-cd C:\Users\Usuário\Documents\BANCO\arkhe-identity-api
 py -3.12 -m venv .venv
 .\.venv\Scripts\python -m pip install --upgrade pip
 .\.venv\Scripts\python -m pip install -r requirements-dev.txt
@@ -46,209 +88,294 @@ py -3.12 -m venv .venv
 Copy-Item .env.example .env
 ```
 
-Copie os valores gerados para `.env`. Nao use os placeholders do exemplo em producao.
+Copie os segredos gerados para `.env`. Os placeholders dos arquivos de exemplo
+não podem ser usados em produção.
 
-## Rodar com Docker
+Para iniciar:
+
+```powershell
+.\.venv\Scripts\uvicorn app.main:app --reload
+```
+
+Ou com Docker:
 
 ```powershell
 docker compose up --build
 ```
 
-Endpoints:
+Endpoints locais:
 
-- API: `http://localhost:8000`
-- Swagger: `http://localhost:8000/docs`
-- Admin: `http://localhost:8000/admin`
-- Cliente teste: `http://localhost:8000/admin/cliente-teste`
+- API: `http://localhost:8000`;
+- Swagger: `http://localhost:8000/docs`;
+- Admin: `http://localhost:8000/admin`.
 
-## Migrations
+## API genérica recomendada
 
-```powershell
-.\.venv\Scripts\alembic upgrade head
-.\.venv\Scripts\alembic revision --autogenerate -m "descricao"
+```http
+POST /v1/identity/validate
+Content-Type: application/json
+X-Arkhe-Api-Key: <api-key>
 ```
 
-## Fluxo Administrativo
+Tipos aceitos: `RG`, `CIN`, `CNH`, `PASSAPORTE`, `CRNM` e `OUTRO`.
 
-1. Entrar em `/admin`.
-2. Autenticar com `ADMIN_USERNAME` e `ADMIN_PASSWORD_HASH`.
-3. Aceitar consentimento explicitamente.
-4. Cadastrar pessoa.
-5. Adicionar documento.
-6. Cadastrar referencia facial por camera ou upload.
-7. A imagem original e descartada por padrao; somente o embedding criptografado fica persistido.
+Regras principais:
 
-Funcionalidades incluidas: listar cadastros, visualizar dados mascarados, bloquear cadastro, revogar referencia facial, revogar consentimento, exportar JSON e excluir definitivamente a pessoa com seus dados relacionados.
+| Tipo | Campos obrigatórios além de tipo e número |
+|---|---|
+| RG | órgão expedidor e UF |
+| CIN | órgão expedidor e UF; número igual ao CPF da pessoa |
+| CNH | órgão expedidor e UF |
+| PASSAPORTE | país emissor |
+| CRNM | país emissor ou órgão expedidor |
+| OUTRO | nenhum |
 
-## Contrato Compatível V5
+RG não exige validade. Datas são opcionais, mas uma validade cadastrada e
+vencida reprova o documento.
 
-Endpoint:
+### Requisição
+
+```json
+{
+  "cpf": "52998224725",
+  "documento": {
+    "tipo": "RG",
+    "numero": "123456789",
+    "orgao_expedidor": "SSP",
+    "uf_expedidor": "SP",
+    "pais_emissor": "BR",
+    "data_emissao": "2025-01-10"
+  },
+  "selfie": {
+    "imagem_base64": "<BASE64>"
+  }
+}
+```
+
+O endpoint não aceita `person_id`, UUID, telefone, e-mail, endereço,
+`client_id`, `customer_id` ou dados bancários.
+
+### Aprovação
+
+```json
+{
+  "request_id": "3bc63ac8-a063-4608-a490-78bd187e78d1",
+  "valido": true,
+  "codigo": "IDENTIDADE_CONFIRMADA",
+  "motivos": [],
+  "verificacoes": {
+    "cpf": {"valido": true, "pessoa_encontrada": true},
+    "documento": {
+      "valido": true,
+      "tipo": "RG",
+      "campos": {
+        "tipo": true,
+        "numero": true,
+        "orgao_expedidor": true,
+        "uf_expedidor": true
+      }
+    },
+    "biometria": {
+      "valido": true,
+      "similaridade": 0.94,
+      "limiar": 0.85
+    }
+  }
+}
+```
+
+`similaridade` varia de 0 a 1 e é comparada ao limiar configurado. Esse valor
+não representa prova de vida.
+
+### Reprovação
+
+```json
+{
+  "request_id": "c2a76f67-377f-4d25-b19d-6e981e416336",
+  "valido": false,
+  "codigo": "DOCUMENTO_DIVERGENTE",
+  "motivos": ["NUMERO_DOCUMENTO_DIVERGENTE"],
+  "verificacoes": {
+    "cpf": {"valido": true, "pessoa_encontrada": true},
+    "documento": {
+      "valido": false,
+      "tipo": "RG",
+      "campos": {"tipo": true, "numero": false}
+    },
+    "biometria": {
+      "valido": true,
+      "similaridade": 0.92,
+      "limiar": 0.85
+    }
+  }
+}
+```
+
+### Códigos de resultado
+
+- `IDENTIDADE_CONFIRMADA`;
+- `CPF_INVALIDO`;
+- `PESSOA_NAO_ENCONTRADA`;
+- `PESSOA_INATIVA`;
+- `CONSENTIMENTO_AUSENTE`;
+- `DOCUMENTO_NAO_ENCONTRADO`;
+- `DOCUMENTO_DIVERGENTE`;
+- `DOCUMENTO_VENCIDO`;
+- `SELFIE_INVALIDA`;
+- `FACE_NAO_DETECTADA`;
+- `MULTIPLAS_FACES_DETECTADAS`;
+- `REFERENCIA_FACIAL_AUSENTE`;
+- `BIOMETRIA_NAO_CONFIRMADA`;
+- `ERRO_INTERNO`.
+
+Validações processadas retornam HTTP 200, inclusive pessoa não encontrada para
+reduzir enumeração de CPFs. CPF ou imagem malformados retornam HTTP 400 com o
+mesmo corpo estruturado. API key inválida retorna 401 e payload estruturalmente
+inválido retorna 422.
+
+### cURL
+
+```bash
+curl -X POST http://localhost:8000/v1/identity/validate \
+  -H "Content-Type: application/json" \
+  -H "X-Arkhe-Api-Key: local-dev-api-key" \
+  --data @identity-request.json
+```
+
+### JavaScript
+
+```javascript
+const response = await fetch("http://localhost:8000/v1/identity/validate", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "X-Arkhe-Api-Key": "local-dev-api-key"
+  },
+  body: JSON.stringify(payload)
+});
+const result = await response.json();
+```
+
+### Python
+
+```python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/v1/identity/validate",
+    headers={"X-Arkhe-Api-Key": "local-dev-api-key"},
+    json=payload,
+    timeout=20,
+)
+result = response.json()
+```
+
+## Compatibilidade V5
 
 ```http
 POST /v5/pessoa-fisica/validacao
 X-Arkhe-Api-Key: <api-key>
 ```
 
-Entrada resumida:
+Essa rota permanece temporariamente para consumidores existentes. Ela é uma
+camada de compatibilidade inspirada no formato Datavalid, não uma integração
+oficial. Novos consumidores devem usar `/v1/identity/validate`.
 
-```json
-{
-  "privacidade": {
-    "rfb": { "id_template": "arkhe-template-v1" },
-    "senatran": { "token": "token-interno-opcional", "cnpj_anuente": "cnpj-opcional" }
-  },
-  "cpf": "00000000000",
-  "validacao": {
-    "nome": "Nome completo",
-    "data_nascimento": "2000-01-01",
-    "sexo": "M",
-    "nacionalidade": 1,
-    "rfb": { "situacao_cpf": "regular" },
-    "documento": { "tipo": 1, "numero": "000000000", "orgao_expedidor": "SSP", "uf_expedidor": "SP" }
-  },
-  "biometria_facial": { "imagem": "<BASE64>", "vivacidade": false },
-  "tag": "cadastro-banco-arkhe"
-}
-```
+A V5 conserva seus schemas externos, incluindo campos civis antigos, mas sua
+decisão combinada passa pela mesma confirmação obrigatória de documento e
+biometria da política central. `vivacidade=true` continua retornando 422 porque
+prova de vida não está implementada.
 
-`privacidade` existe apenas por compatibilidade estrutural. Nao representa autorizacao real da RFB ou Senatran. Ative `REQUIRE_PRIVACY_OBJECT=true` somente se quiser exigir a presenca do objeto no ambiente local.
+## Segurança e auditoria
 
-Saida resumida:
+- CPF e documento não são armazenados em texto puro;
+- Base64, imagem, embedding, CPF completo e API key não são registrados;
+- a resposta nunca contém `person_id`;
+- toda tentativa processada registra request ID, pessoa interna quando
+  encontrada, código, campos avaliados, duração, similaridade e ausências;
+- login, API genérica e V5 possuem rate limit configurável;
+- a aplicação recusa defaults de desenvolvimento quando
+  `ENVIRONMENT=production`.
 
-```json
-{
-  "request_id": "uuid",
-  "provedor": "ARKHE_PRIVATE_REGISTRY",
-  "ambiente": "TCC",
-  "rfb_existe": true,
-  "cnh_existe": true,
-  "rfb": { "nome": true, "nome_similaridade": 1.0, "data_nascimento": true },
-  "biometria_facial": {
-    "disponivel": true,
-    "similaridade": 0.94,
-    "probabilidade": "ALTISSIMA",
-    "vivacidade": null,
-    "codigo_retorno": "ARKHE_FACE_OK"
-  },
-  "regra_local": {
-    "cadastro_confirmado": true,
-    "face_confirmada": true,
-    "validacao_combinada": true,
-    "limiar_facial": 0.85
-  },
-  "avisos": [
-    "Comparacao realizada exclusivamente com a base privada Banco Arkhe.",
-    "Nenhuma base governamental foi consultada.",
-    "Vivacidade nao foi verificada."
-  ]
-}
-```
-
-Se `vivacidade=true`, a API retorna 422 com `ARKHE_LIVENESS_NOT_SUPPORTED`.
-
-## Exemplos
-
-curl:
-
-```bash
-curl -X POST http://localhost:8000/v5/pessoa-fisica/validacao \
-  -H "Content-Type: application/json" \
-  -H "X-Arkhe-Api-Key: local-dev-api-key" \
-  -d @examples/request.json
-```
-
-PowerShell:
-
-```powershell
-Invoke-RestMethod -Method Post -Uri http://localhost:8000/v5/pessoa-fisica/validacao `
-  -Headers @{ "X-Arkhe-Api-Key" = "local-dev-api-key" } `
-  -ContentType "application/json" `
-  -Body (Get-Content .\examples\request.json -Raw)
-```
-
-JavaScript:
-
-```js
-await fetch("/v5/pessoa-fisica/validacao", {
-  method: "POST",
-  headers: { "Content-Type": "application/json", "X-Arkhe-Api-Key": "local-dev-api-key" },
-  body: JSON.stringify(payload)
-});
-```
-
-Python:
-
-```python
-import requests
-
-requests.post(
-    "http://localhost:8000/v5/pessoa-fisica/validacao",
-    headers={"X-Arkhe-Api-Key": "local-dev-api-key"},
-    json=payload,
-    timeout=20,
-)
-```
-
-## Seguranca e LGPD
-
-- Nao armazene CPF ou documento em texto puro.
-- Nao registre selfie, Base64, embedding, CPF completo ou payload sensivel nos logs.
-- Use chaves separadas: `DATA_ENCRYPTION_KEY`, `LOOKUP_HMAC_KEY`, `JWT_SECRET`, `ADMIN_PASSWORD_HASH`, `API_KEY_HASH`.
-- A caixa de consentimento nunca vem marcada.
-- Sem consentimento, nao cadastre biometria.
-- Revogacao e exclusao definitiva estao expostas no admin/API.
-- Use apenas pessoas ficticias ou participantes que aceitaram expressamente.
-
-## Calibracao
-
-CSV de entrada:
-
-```csv
-left_path,right_path,label
-foto_a1.jpg,foto_a2.jpg,genuine
-foto_a1.jpg,foto_b1.jpg,impostor
-```
-
-Comando:
-
-```powershell
-.\.venv\Scripts\python scripts\calibrate_threshold.py --pairs pares.csv --out calibration_report.csv
-```
-
-O relatorio usa identificadores anonimizados e calcula FAR/FRR por limiar.
-
-## Troca futura para Datavalid
-
-O frontend do banco deve chamar sempre a mesma interface. No futuro, altere:
+Variáveis relevantes:
 
 ```env
-IDENTITY_PROVIDER=private_registry
+ADMIN_LOGIN_RATE_LIMIT=20/minute
+IDENTITY_VALIDATION_RATE_LIMIT=120/minute
+V5_VALIDATION_RATE_LIMIT=120/minute
 ```
 
-para:
+Produção exige valores seguros para `DATA_ENCRYPTION_KEY`,
+`LOOKUP_HMAC_KEY`, `JWT_SECRET`, `ADMIN_PASSWORD_HASH` e `API_KEY_HASH`.
+`API_KEY_PLAINTEXT_FOR_LOCAL_ONLY` deve ficar vazio.
 
-```env
-IDENTITY_PROVIDER=datavalid
+`ADMIN_PASSWORD_HASH` e `API_KEY_HASH` recebem hashes bcrypt, nunca os
+segredos em texto puro. Gere cada hash interativamente, sem colocar o valor na
+linha de comando ou no histórico:
+
+```powershell
+.\.venv\Scripts\python.exe -c "from getpass import getpass; from passlib.context import CryptContext; print(CryptContext(schemes=['bcrypt']).hash(getpass('Segredo: ')))"
 ```
 
-`DatavalidProvider` esta propositalmente vazio, com TODOs. Ele nao chama o Datavalid agora e nao contem credenciais reais.
+Copie o resultado diretamente para o gerenciador de variáveis do ambiente e
+não o grave em `.env`, logs ou documentação.
 
-## Deploy EasyPanel
+Em uma base já existente, preserve obrigatoriamente `DATA_ENCRYPTION_KEY` e
+`LOOKUP_HMAC_KEY`. Trocar a primeira impede descriptografar CPF, documentos e
+embeddings; trocar a segunda impede localizar pessoas pelo CPF.
 
-- Defina `DATABASE_URL` apontando para PostgreSQL externo.
-- Defina `PORT`.
-- Rode `alembic upgrade head` no start.
-- Use usuario nao root do Dockerfile.
-- Envie logs para stdout.
-- Nao habilite `DEBUG` em producao.
-- Garanta storage externo se decidir manter imagens, embora `STORE_REFERENCE_IMAGES=false` seja o padrao.
+## Testes
 
-## Verificacao Local Realizada
+```powershell
+.\.venv\Scripts\python -m pytest
+.\.venv\Scripts\ruff check .
+.\.venv\Scripts\mypy app
+```
 
-Neste ambiente:
+Os testes usam backend facial falso e não dependem dos modelos OpenCV reais.
 
-- `ruff check .`: passou
-- `mypy app`: passou
-- `pytest`: 13 testes passaram
+## Migrations
 
-Docker nao estava acessivel no Windows local: o client nao encontrou `docker_engine`. Por isso, PostgreSQL via Docker e migrations contra Postgres nao foram executados nesta maquina.
+Esta etapa não cria migration. Para um banco novo ou existente:
+
+```powershell
+.\.venv\Scripts\alembic upgrade head
+```
+
+Não remova manualmente as colunas legadas de e-mail e telefone.
+
+## Deploy no EasyPanel
+
+1. Faça backup do PostgreSQL.
+2. Confirme que `DATABASE_URL` aponta para o PostgreSQL persistente existente
+   pela rede interna do projeto.
+3. Preserve os valores atuais de `DATA_ENCRYPTION_KEY` e `LOOKUP_HMAC_KEY`.
+4. Configure as demais variáveis de `easypanel.env.example`.
+5. Mantenha `ENVIRONMENT=production`, `DEBUG=false`,
+   `FACE_BACKEND=opencv` e `API_KEY_PLAINTEXT_FOR_LOCAL_ONLY=` vazio.
+6. Mantenha `ENABLE_API_DOCS=true` somente se Swagger/ReDoc precisarem ficar
+   públicos neste primeiro deploy. Depois, podem ser removidos com
+   `ENABLE_API_DOCS=false`, sem alteração de código.
+7. Configure `FORWARDED_ALLOW_IPS` apenas com o IP ou CIDR do proxy interno
+   confiável. Não use `*` sem garantir isolamento de rede.
+8. Publique a nova imagem.
+9. O `scripts/start.sh` executará `alembic upgrade head` antes do Uvicorn e
+   encerrará o container se a migration falhar.
+10. Use `/ready` como readiness check e `/health` como liveness check.
+11. Verifique `/docs` quando habilitado e `/admin`.
+12. Teste uma identidade fictícia/consentida na rota genérica.
+13. Execute um teste de regressão no consumidor V5 existente.
+14. Confirme logs e registros de auditoria sem conteúdo sensível.
+
+O HTTPS é terminado pelo proxy do EasyPanel; isso permite o acesso à câmera do
+painel administrativo. Integrações backend-to-backend não dependem de CORS.
+Para navegadores, configure origens explícitas em `CORS_ORIGINS`; produção
+recusa `*` porque a aplicação habilita credenciais.
+
+O rate limit usa o endereço remoto observado pela aplicação. Após o deploy,
+confirme que o proxy encaminha `X-Forwarded-For` e que Uvicorn confia somente
+no proxy interno configurado em `FORWARDED_ALLOW_IPS`.
+
+Antes de uso real, calibre `FACIAL_SIMILARITY_THRESHOLD` com pares genuínos e
+impostores consentidos. O algoritmo local não realiza prova de vida e não deve
+ser usado sozinho em cenários de alto risco.

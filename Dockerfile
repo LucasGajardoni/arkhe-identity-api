@@ -5,6 +5,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PORT=8000
 
+RUN python -c "import struct; assert struct.calcsize('P') * 8 == 64, '64-bit Python required'"
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libgl1 \
@@ -24,4 +26,6 @@ RUN useradd --create-home --shell /usr/sbin/nologin arkhe \
 USER arkhe
 
 EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)" || exit 1
 ENTRYPOINT ["/bin/sh", "/app/scripts/start.sh"]

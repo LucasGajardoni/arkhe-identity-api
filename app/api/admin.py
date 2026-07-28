@@ -6,15 +6,19 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import db_session, require_admin
 from app.core.config import get_settings
 from app.core.exceptions import ArkheError, http_error
+from app.core.rate_limit import limiter
 from app.core.security import create_access_token, decrypt_text, mask_cpf, verify_secret
 from app.db.models import ConsentRecord, FacialReference, ValidationAttempt
 from app.repositories.person_repository import PersonRepository
 from app.schemas.admin import DocumentCreate, LoginInput, PersonCreate, PersonUpdate, TokenOutput
+from app.services.consent import has_active_consent
+from app.services.cpf import only_digits
 from app.services.facial import FacialService
 from app.services.files import decode_base64_image, load_image
 
@@ -33,7 +37,8 @@ def test_client(request: Request) -> HTMLResponse:
 
 
 @router.post("/auth/login", response_model=TokenOutput)
-def login(payload: LoginInput) -> TokenOutput:
+@limiter.limit(get_settings().admin_login_rate_limit)
+def login(payload: LoginInput, request: Request) -> TokenOutput:
     settings = get_settings()
     if payload.username != settings.admin_username or not verify_secret(payload.password, settings.admin_password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciais invalidas.")
@@ -45,8 +50,14 @@ def create_person(payload: PersonCreate, db: Session = Depends(db_session)):
     if not payload.consentimento.consentimento_aceito:
         raise http_error("ARKHE_CONSENT_REQUIRED", "Consentimento explicito obrigatorio para cadastro biometrico.")
     repo = PersonRepository(db)
-    person = repo.create_person(payload)
-    db.commit()
+    if repo.find_by_cpf(payload.cpf):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="CPF já cadastrado.")
+    try:
+        person = repo.create_person(payload)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="CPF já cadastrado.") from exc
     return {"id": person.id, "cpf_mascarado": mask_cpf(payload.cpf), "nome": person.nome}
 
 
@@ -71,8 +82,6 @@ def get_person(person_id: UUID, db: Session = Depends(db_session)):
         "nome_mae": person.nome_mae,
         "nome_pai": person.nome_pai,
         "situacao_cpf_interna": person.situacao_cpf_interna,
-        "email": person.email,
-        "telefone": person.telefone,
         "status": person.status,
         "consentimento_aceito_em": person.consentimento_aceito_em,
         "documentos": [
@@ -116,6 +125,13 @@ def add_document(person_id: UUID, payload: DocumentCreate, db: Session = Depends
     person = repo.get(person_id)
     if not person:
         raise HTTPException(status_code=404, detail="Pessoa nao encontrada.")
+    if payload.tipo.value == "CIN":
+        person_cpf = only_digits(decrypt_text(person.cpf_encrypted) or "")
+        if only_digits(payload.numero) != person_cpf:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="O número da CIN deve corresponder ao CPF da pessoa.",
+            )
     doc = repo.add_document(person, payload)
     db.commit()
     return {"id": doc.id, "tipo": doc.tipo}
@@ -132,7 +148,7 @@ async def add_face_reference(
     person = repo.get(person_id)
     if not person:
         raise HTTPException(status_code=404, detail="Pessoa nao encontrada.")
-    if not person.consentimento_aceito_em or any(cons.revogado_em for cons in person.consents):
+    if not has_active_consent(person):
         raise http_error("ARKHE_CONSENT_REQUIRED", "Consentimento valido obrigatorio.")
     try:
         image = load_image(await imagem.read()) if imagem else decode_base64_image(imagem_base64 or "")

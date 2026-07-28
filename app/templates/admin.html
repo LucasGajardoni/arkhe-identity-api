@@ -8,77 +8,179 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>Arkhe Identity Admin</h1>
-    <span>Base privada academica</span>
+    <div>
+      <h1>Arkhe Identity Admin</h1>
+      <span>Base privada acadêmica</span>
+    </div>
+    <span id="authStatus" class="status-badge">Não autenticado</span>
   </header>
+
   <main class="layout">
-    <section class="panel auth">
-      <h2>Autenticacao</h2>
-      <label>Usuario <input id="loginUser" value="admin"></label>
-      <label>Senha <input id="loginPass" type="password"></label>
-      <button id="loginBtn">Entrar</button>
-    </section>
-
-    <section class="panel">
-      <h2>Consentimento biometrico</h2>
-      <p>Dados pessoais, documento e um vetor biometrico facial serao coletados para prova de conceito academica privada. A comparacao ocorre somente com a base cadastrada no ambiente Banco Arkhe. Nao ha consulta a orgaos publicos, nao e prova de vida e nao representa um banco real.</p>
-      <p>A retencao segue o periodo do TCC ou ate solicitacao de exclusao. Acesso restrito aos responsaveis pelo teste. Use somente participantes que concordaram expressamente.</p>
-      <label class="check"><input id="consent" type="checkbox"> Li e aceitei o termo de consentimento.</label>
-    </section>
-
-    <section class="panel">
-      <h2>Cadastro de pessoa</h2>
-      <form id="personForm" class="grid">
-        <label>CPF <input name="cpf" data-mask="cpf" placeholder="000.000.000-00" required></label>
-        <label>Nome completo <input name="nome" required></label>
-        <label>Nome social <input name="nome_social"></label>
-        <label>Nascimento <input name="data_nascimento" type="date" required></label>
-        <label>Sexo <select name="sexo"><option>M</option><option>F</option><option>O</option></select></label>
-        <label>Nacionalidade <select name="nacionalidade"><option value="1">Brasileiro</option><option value="2">Brasileiro naturalizado</option><option value="3">Estrangeiro</option><option value="4">Brasileiro nascido no exterior</option></select></label>
-        <label>Nome da mae <input name="nome_mae"></label>
-        <label>Nome do pai <input name="nome_pai"></label>
-        <label>Situacao interna <select name="situacao_cpf_interna"><option value="regular">regular</option><option value="pendente">pendente</option><option value="bloqueado">bloqueado</option></select></label>
-        <label>Email <input name="email" type="email"></label>
-        <label>Telefone <input name="telefone" data-mask="phone" placeholder="(11) 99999-9999"></label>
-      </form>
-      <button id="savePerson">Cadastrar pessoa</button>
-      <output id="personOut"></output>
-    </section>
-
-    <section class="panel">
-      <h2>Documento</h2>
-      <form id="docForm" class="grid">
-        <label>ID pessoa <input name="person_id" required></label>
-        <label>Tipo <select name="tipo" id="docType"><option>RG</option><option>CIN</option><option>CNH</option><option>PASSAPORTE</option><option>CRNM</option><option>OUTRO</option></select></label>
-        <label>Numero <input name="numero" required></label>
-        <label>Orgao expedidor <input name="orgao_expedidor"></label>
-        <label>UF expedidora <select name="uf_expedidor"><option></option><option>AC</option><option>AL</option><option>AP</option><option>AM</option><option>BA</option><option>CE</option><option>DF</option><option>ES</option><option>GO</option><option>MA</option><option>MT</option><option>MS</option><option>MG</option><option>PA</option><option>PB</option><option>PR</option><option>PE</option><option>PI</option><option>RJ</option><option>RN</option><option>RS</option><option>RO</option><option>RR</option><option>SC</option><option>SP</option><option>SE</option><option>TO</option></select></label>
-        <label>Pais emissor <input name="pais_emissor" value="BR"></label>
-        <label>Emissao <input name="data_emissao" type="date"></label>
-        <label>Validade <input name="data_validade" type="date"></label>
-      </form>
-      <button id="saveDoc">Adicionar documento</button>
-    </section>
-
-    <section class="panel">
-      <h2>Referencia facial</h2>
-      <p>Rosto centralizado, boa iluminacao, sem outra pessoa, sem filtros, sem oculos escuros, camera na altura dos olhos.</p>
-      <div class="camera">
-        <video id="video" autoplay playsinline></video>
-        <canvas id="canvas" width="480" height="360"></canvas>
+    <section class="panel auth wide" id="authPanel">
+      <div>
+        <h2>Autenticação</h2>
+        <p class="muted">Entre para iniciar ou continuar um cadastro administrativo.</p>
       </div>
-      <label>ID pessoa <input id="facePersonId"></label>
-      <input id="faceUpload" type="file" accept="image/png,image/jpeg,image/webp">
-      <button id="startCam">Abrir camera</button>
-      <button id="capture">Capturar</button>
-      <button id="saveFace">Cadastrar biometria</button>
-      <output id="faceOut"></output>
+      <div class="auth-fields">
+        <label>Usuário <input id="loginUser" value="admin" autocomplete="username"></label>
+        <label>Senha <input id="loginPass" type="password" autocomplete="current-password"></label>
+        <button id="loginBtn" type="button">Entrar</button>
+      </div>
+      <p id="loginMessage" class="message" role="status"></p>
     </section>
 
-    <section class="panel wide">
-      <h2>Pessoas cadastradas</h2>
-      <button id="refreshPeople">Atualizar</button>
-      <table><thead><tr><th>CPF</th><th>Nome</th><th>Status</th><th>Biometria</th><th>ID</th></tr></thead><tbody id="peopleBody"></tbody></table>
+    <section class="panel wide workspace" id="workspace" hidden>
+      <nav class="steps" aria-label="Etapas do cadastro">
+        <button type="button" class="step active" data-step="1"><span>1</span> Dados pessoais</button>
+        <button type="button" class="step" data-step="2" disabled><span>2</span> Documento</button>
+        <button type="button" class="step" data-step="3" disabled><span>3</span> Referência facial</button>
+        <button type="button" class="step" data-step="4" disabled><span>4</span> Conclusão</button>
+      </nav>
+
+      <aside id="selectedPersonCard" class="selected-person" hidden>
+        <div>
+          <span class="eyebrow">Pessoa selecionada</span>
+          <strong id="selectedName"></strong>
+          <span id="selectedDetails" class="muted"></span>
+          <small id="selectedId"></small>
+        </div>
+        <button id="cancelSelection" type="button" class="secondary">Cancelar seleção</button>
+      </aside>
+
+      <section class="flow-step active" data-step-panel="1">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">Etapa 1 de 4</span>
+            <h2>Dados pessoais e consentimento</h2>
+          </div>
+          <button id="newRegistration" type="button" class="secondary">Reiniciar cadastro</button>
+        </div>
+
+        <form id="personForm" class="grid">
+          <label>CPF <input name="cpf" data-mask="cpf" placeholder="000.000.000-00" required></label>
+          <label>Nome completo <input name="nome" required></label>
+          <label>Nome social <input name="nome_social"></label>
+          <label>Data de nascimento <input name="data_nascimento" type="date" required></label>
+          <label>Sexo
+            <select name="sexo"><option value="M">Masculino</option><option value="F">Feminino</option><option value="O">Outro</option></select>
+          </label>
+          <label>Nacionalidade
+            <select name="nacionalidade"><option value="1">Brasileiro</option><option value="2">Brasileiro naturalizado</option><option value="3">Estrangeiro</option><option value="4">Brasileiro nascido no exterior</option></select>
+          </label>
+          <label>Nome da mãe <input name="nome_mae"></label>
+          <label>Nome do pai <input name="nome_pai"></label>
+          <label>Situação interna
+            <select name="situacao_cpf_interna"><option value="regular">Regular</option><option value="pendente">Pendente</option><option value="bloqueado">Bloqueado</option></select>
+          </label>
+        </form>
+
+        <div class="consent-box">
+          <h3>Consentimento biométrico</h3>
+          <p>Dados pessoais, documento e um vetor biométrico facial serão coletados para uma prova de conceito acadêmica privada. Não há consulta a órgãos públicos, prova de vida ou representação de um banco real.</p>
+          <p>A retenção segue o período do TCC ou até solicitação de exclusão. Use somente participantes que concordaram expressamente.</p>
+          <label class="check"><input id="consent" type="checkbox"> Li e aceitei o termo de consentimento.</label>
+        </div>
+        <button id="savePerson" type="button">Cadastrar pessoa e continuar</button>
+        <p id="personMessage" class="message" role="status"></p>
+      </section>
+
+      <section class="flow-step" data-step-panel="2" hidden>
+        <span class="eyebrow">Etapa 2 de 4</span>
+        <h2>Documento</h2>
+        <p class="muted">O documento será associado automaticamente à pessoa selecionada.</p>
+        <form id="docForm" class="grid">
+          <label>Tipo
+            <select name="tipo" id="docType">
+              <option>RG</option><option>CIN</option><option>CNH</option>
+              <option>PASSAPORTE</option><option>CRNM</option><option>OUTRO</option>
+            </select>
+          </label>
+          <label data-doc-field="numero"><span id="docNumberLabel">Número</span><input name="numero" required></label>
+          <label data-doc-field="orgao_expedidor">Órgão ou autoridade emissora <input name="orgao_expedidor"></label>
+          <label data-doc-field="uf_expedidor">UF expedidora
+            <select name="uf_expedidor">
+              <option value="">Selecione</option><option>AC</option><option>AL</option><option>AP</option><option>AM</option><option>BA</option><option>CE</option><option>DF</option><option>ES</option><option>GO</option><option>MA</option><option>MT</option><option>MS</option><option>MG</option><option>PA</option><option>PB</option><option>PR</option><option>PE</option><option>PI</option><option>RJ</option><option>RN</option><option>RS</option><option>RO</option><option>RR</option><option>SC</option><option>SP</option><option>SE</option><option>TO</option>
+            </select>
+          </label>
+          <label data-doc-field="pais_emissor">País emissor <input name="pais_emissor" value="BR" placeholder="BR"></label>
+          <label data-doc-field="data_emissao">Data de emissão <input name="data_emissao" type="date"></label>
+          <label data-doc-field="data_validade">Data de validade <input name="data_validade" type="date"></label>
+          <label class="check" data-doc-field="principal"><input name="principal" type="checkbox" checked> Documento principal</label>
+        </form>
+        <div class="actions">
+          <button id="saveDoc" type="button">Associar documento e continuar</button>
+          <button type="button" class="secondary" data-go-step="3">Pular documento</button>
+        </div>
+        <p id="docMessage" class="message" role="status"></p>
+      </section>
+
+      <section class="flow-step" data-step-panel="3" hidden>
+        <span class="eyebrow">Etapa 3 de 4</span>
+        <h2>Referência facial</h2>
+        <p class="muted">Use uma foto frontal, bem iluminada, sem filtros ou óculos escuros. Esta etapa não realiza prova de vida.</p>
+        <div class="source-tabs">
+          <button id="cameraMode" type="button" class="secondary active">Usar câmera</button>
+          <button id="uploadMode" type="button" class="secondary">Enviar imagem</button>
+        </div>
+        <div id="cameraArea">
+          <video id="video" autoplay playsinline></video>
+          <button id="startCam" type="button">Abrir câmera</button>
+          <button id="capture" type="button" class="secondary">Capturar foto</button>
+        </div>
+        <div id="uploadArea" hidden>
+          <label>Imagem facial <input id="faceUpload" type="file" accept="image/png,image/jpeg,image/webp"></label>
+        </div>
+        <div class="preview-wrap">
+          <span class="eyebrow">Prévia</span>
+          <canvas id="canvas" width="480" height="360" hidden></canvas>
+          <img id="imagePreview" alt="Prévia da referência facial" hidden>
+          <p id="emptyPreview" class="empty-preview">Nenhuma imagem escolhida ou capturada.</p>
+        </div>
+        <div class="actions">
+          <button id="saveFace" type="button">Cadastrar referência facial</button>
+          <button type="button" class="secondary" data-go-step="4">Concluir sem biometria</button>
+        </div>
+        <p id="faceMessage" class="message" role="status"></p>
+      </section>
+
+      <section class="flow-step" data-step-panel="4" hidden>
+        <span class="eyebrow">Etapa 4 de 4</span>
+        <h2>Cadastro concluído</h2>
+        <div class="summary-card">
+          <div><span>Nome</span><strong id="summaryName"></strong></div>
+          <div><span>CPF</span><strong id="summaryCpf"></strong></div>
+          <div><span>Status</span><strong id="summaryStatus"></strong></div>
+          <div><span>Documento</span><strong id="summaryDocument"></strong></div>
+          <div><span>Referência facial</span><strong id="summaryFace"></strong></div>
+          <div class="technical-id"><span>UUID técnico (não editável)</span><code id="summaryId"></code></div>
+        </div>
+        <button id="finishRegistration" type="button">Iniciar outro cadastro</button>
+      </section>
+
+      <details class="technical">
+        <summary>Detalhes técnicos da última resposta</summary>
+        <pre id="technicalOutput">Nenhuma resposta disponível.</pre>
+      </details>
+    </section>
+
+    <section class="panel wide" id="peoplePanel" hidden>
+      <div class="section-heading">
+        <div>
+          <h2>Pessoas cadastradas</h2>
+          <p class="muted">Selecione uma pessoa para adicionar documento ou cadastrar/substituir a biometria.</p>
+        </div>
+        <button id="refreshPeople" type="button" class="secondary">Atualizar lista</button>
+      </div>
+      <label class="search-label">Buscar por nome, CPF ou UUID
+        <input id="peopleSearch" type="search" placeholder="Digite para filtrar">
+      </label>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>CPF</th><th>Nome</th><th>Status</th><th>Biometria</th><th>UUID</th><th></th></tr></thead>
+          <tbody id="peopleBody"></tbody>
+        </table>
+      </div>
+      <p id="peopleMessage" class="message" role="status"></p>
     </section>
   </main>
   <script src="/static/admin.js"></script>

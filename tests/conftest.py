@@ -13,6 +13,8 @@ from sqlalchemy.pool import StaticPool
 
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 os.environ["DATABASE_URL"] = "sqlite+pysqlite:///:memory:"
+os.environ["ENVIRONMENT"] = "test"
+os.environ["DEBUG"] = "false"
 os.environ["FACE_BACKEND"] = "fake"
 os.environ["API_KEY_PLAINTEXT_FOR_LOCAL_ONLY"] = "test-key"
 os.environ["ADMIN_PASSWORD_HASH"] = pwd.hash("admin-test")
@@ -22,14 +24,18 @@ os.environ["JWT_SECRET"] = "test-jwt"
 
 from app.api.deps import db_session
 from app.core.config import get_settings
+from app.core.rate_limit import limiter
 from app.db.base import Base
 from app.main import app
 
 
 @pytest.fixture(autouse=True)
 def test_settings(monkeypatch):
+    limiter.reset()
     get_settings.cache_clear()
     monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("ENVIRONMENT", "test")
+    monkeypatch.setenv("DEBUG", "false")
     monkeypatch.setenv("FACE_BACKEND", "fake")
     monkeypatch.setenv("API_KEY_PLAINTEXT_FOR_LOCAL_ONLY", "test-key")
     monkeypatch.setenv("ADMIN_PASSWORD_HASH", pwd.hash("admin-test"))
@@ -37,6 +43,7 @@ def test_settings(monkeypatch):
     monkeypatch.setenv("LOOKUP_HMAC_KEY", "test-hmac-key")
     monkeypatch.setenv("JWT_SECRET", "test-jwt")
     yield
+    limiter.reset()
     get_settings.cache_clear()
 
 
