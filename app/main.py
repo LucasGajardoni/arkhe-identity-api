@@ -6,8 +6,9 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from app.api import admin, health, validation
+from app.api import admin, health, identity
 from app.core.config import get_settings
+from app.core.exceptions import ArkheError
 from app.core.logging import configure_logging
 
 configure_logging()
@@ -16,10 +17,7 @@ limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="Arkhe Identity API",
-    description=(
-        "Provedor privado academico. Os dados e a biometria foram comparados com a base "
-        "privada previamente cadastrada no ambiente Banco Arkhe."
-    ),
+    description="Plataforma multi-tenant para cadastro e verificacao facial via API.",
     version="0.1.0",
 )
 app.state.limiter = limiter
@@ -29,11 +27,11 @@ app.add_middleware(
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
-    allow_headers=["Authorization", "Content-Type", "X-Arkhe-Api-Key"],
+    allow_headers=["Authorization", "Content-Type", "X-Client-Id", "X-Client-Secret"],
 )
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.include_router(health.router)
-app.include_router(validation.router)
+app.include_router(identity.router)
 app.include_router(admin.router)
 
 
@@ -50,3 +48,8 @@ async def security_headers(request: Request, call_next):
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
     return JSONResponse(status_code=429, content={"detail": "Limite de requisicoes excedido."})
+
+
+@app.exception_handler(ArkheError)
+async def arkhe_error_handler(request: Request, exc: ArkheError) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"detail": {"code": exc.code, "message": exc.message}})

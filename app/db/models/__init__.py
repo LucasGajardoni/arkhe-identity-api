@@ -1,3 +1,19 @@
-from app.db.models.person import ConsentRecord, FacialReference, IdentityDocument, Person, ValidationAttempt
+from app.db.models.identity import (
+    AuditEvent,
+    BiometricTemplate,
+    ClientApplication,
+    EnrollmentSession,
+    Identity,
+    VerificationAttempt,
+    VerificationSession,
+)
 
-__all__ = ["ConsentRecord", "FacialReference", "IdentityDocument", "Person", "ValidationAttempt"]
+__all__ = [
+    "AuditEvent",
+    "BiometricTemplate",
+    "ClientApplication",
+    "EnrollmentSession",
+    "Identity",
+    "VerificationAttempt",
+    "VerificationSession",
+]

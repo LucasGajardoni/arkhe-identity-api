@@ -1,7 +1,7 @@
 [project]
 name = "arkhe-identity-api"
 version = "0.1.0"
-description = "Provedor privado academico de validacao de identidade para o Banco Arkhe."
+description = "API multi-tenant para cadastro e verificacao facial."
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "fastapi==0.116.1",

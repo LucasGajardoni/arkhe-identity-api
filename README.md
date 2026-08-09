@@ -1,40 +1,42 @@
 # Arkhe Identity API
 
-Provedor interno, privado e academico de validacao de identidade para o TCC do Banco Arkhe.
+API independente de identidade facial para cadastro e verificacao biometrica multi-tenant.
 
-Frase correta para apresentar o resultado:
-
-> Os dados e a biometria foram comparados com a base privada previamente cadastrada no ambiente Banco Arkhe.
-
-Este projeto nao consulta Receita Federal, Senatran, Renach ou qualquer base governamental. Ele nao prova existencia oficial de uma pessoa, nao implementa prova de vida e nao substitui o Datavalid oficial.
+O projeto funciona como um servico de Face ID: uma aplicacao cliente cria uma sessao de cadastro ou verificacao no backend, entrega ao navegador apenas um `session_token` temporario, captura a imagem pelo scanner web e recebe o resultado sem expor `client_secret`, selfie, CPF completo ou embedding.
 
 ## Arquitetura
 
 - FastAPI + Uvicorn
 - SQLAlchemy 2 + Alembic
-- PostgreSQL em desenvolvimento/producao
-- SQLite somente em testes automatizados
+- PostgreSQL em producao
+- SQLite apenas em testes automatizados
 - AES-GCM para dados recuperaveis
-- HMAC-SHA-256 para indices pesquisaveis de CPF/documento
+- HMAC-SHA-256 para indices pesquisaveis de CPF e tokens
 - OpenCV YuNet + SFace para deteccao e embeddings faciais locais
-- Admin HTML/CSS/JS simples em `/admin`
-- Cliente de teste Banco Arkhe em `/admin/cliente-teste`
-- Provider intercambiavel via `IDENTITY_PROVIDER`
+- Admin em `/admin`
+- Scanner web generico em `/admin/scanner`
 
-## Biblioteca Facial
+## Entidades principais
 
-A implementacao real usa OpenCV contrib:
+- `ClientApplication`: sistema cliente autorizado a criar sessoes.
+- `Identity`: identidade cadastrada por cliente, com CPF normalizado, criptografado e mascarado nas respostas.
+- `BiometricTemplate`: embedding facial criptografado e versionado.
+- `EnrollmentSession`: sessao temporaria de cadastro facial.
+- `VerificationSession`: sessao temporaria de verificacao facial.
+- `VerificationAttempt`: tentativa individual com score e decisao.
+- `AuditEvent`: trilha operacional sem payload sensivel.
 
-- detector: YuNet `face_detection_yunet_2023mar.onnx`
-- reconhecedor: SFace `face_recognition_sface_2021dec.onnx`
-- metrica: cosseno sobre embedding normalizado, convertido para similaridade 0..1
-- licenca: OpenCV e opencv_zoo usam Apache License 2.0
+## Variaveis
 
-Motivo da escolha: possui wheels pre-compilados para Windows/Linux, roda em Docker, gera embeddings localmente e nao envia imagens a servicos externos. A alternativa `insightface==0.7.3` foi testada no Windows/Python 3.12 e falhou por exigir Microsoft C++ Build Tools para compilar extensao nativa.
+Use `.env.example` no ambiente local e `easypanel.env.example` no EasyPanel. Gere valores reais com:
 
-Limites: o limiar facial padrao e experimental. Use `scripts/calibrate_threshold.py` com pares genuinos/impostores consentidos antes de usar qualquer valor como regra final.
+```powershell
+.\.venv\Scripts\python scripts\generate_secrets.py
+```
 
-## Instalar no Windows
+Nunca use placeholders em producao.
+
+## Rodar local
 
 ```powershell
 cd C:\Users\Usuário\Documents\BANCO\arkhe-identity-api
@@ -42,213 +44,260 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python -m pip install --upgrade pip
 .\.venv\Scripts\python -m pip install -r requirements-dev.txt
 .\scripts\download_face_models.ps1
-.\.venv\Scripts\python scripts\generate_secrets.py
-Copy-Item .env.example .env
+.\.venv\Scripts\alembic upgrade head
+.\.venv\Scripts\uvicorn app.main:app --reload --port 8000
 ```
 
-Copie os valores gerados para `.env`. Nao use os placeholders do exemplo em producao.
-
-## Rodar com Docker
-
-```powershell
-docker compose up --build
-```
-
-Endpoints:
+URLs:
 
 - API: `http://localhost:8000`
 - Swagger: `http://localhost:8000/docs`
 - Admin: `http://localhost:8000/admin`
-- Cliente teste: `http://localhost:8000/admin/cliente-teste`
+- Health: `http://localhost:8000/health`
 
-## Migrations
+## Fluxo de uso
 
-```powershell
-.\.venv\Scripts\alembic upgrade head
-.\.venv\Scripts\alembic revision --autogenerate -m "descricao"
+1. O admin cria uma aplicacao cliente em `POST /admin/client-applications`.
+2. O backend do cliente guarda `slug` e `client_secret`.
+3. O backend do cliente cria uma sessao em `POST /v1/enrollments`.
+4. O navegador usa apenas o `session_token` para enviar capturas.
+5. Quando `ready=true`, o backend conclui com `POST /v1/enrollments/{session_id}/complete`.
+6. Para autenticar depois, o backend cria `POST /v1/verifications` e envia a selfie em `/attempts`.
+
+## SDK Web
+
+O scanner reutilizavel fica em:
+
+```html
+<script src="https://SUA-API/static/sdk/face-identity.js"></script>
 ```
 
-## Fluxo Administrativo
+A pagina `/admin/scanner` e apenas uma demo/playground. Ela usa o SDK e nao duplica a logica de camera.
 
-1. Entrar em `/admin`.
-2. Autenticar com `ADMIN_USERNAME` e `ADMIN_PASSWORD_HASH`.
-3. Aceitar consentimento explicitamente.
-4. Cadastrar pessoa.
-5. Adicionar documento.
-6. Cadastrar referencia facial por camera ou upload.
-7. A imagem original e descartada por padrao; somente o embedding criptografado fica persistido.
+Arquitetura do SDK:
 
-Funcionalidades incluidas: listar cadastros, visualizar dados mascarados, bloquear cadastro, revogar referencia facial, revogar consentimento, exportar JSON e excluir definitivamente a pessoa com seus dados relacionados.
+- `CameraController`: encapsula `getUserMedia`, preview, captura JPEG e encerramento da camera.
+- `FaceIdentityTransport`: envia captures para a API com `Authorization: Bearer <sessionToken>`.
+- `ScannerUI`: cria a interface visual padrao de scanner.
+- `FaceIdentity.enroll()` e `FaceIdentity.verify()`: orquestram camera, transporte, UI, callbacks e erros.
 
-## Contrato Compatível V5
+Exemplo de cadastro em outro projeto:
 
-Endpoint:
-
-```http
-POST /v5/pessoa-fisica/validacao
-X-Arkhe-Api-Key: <api-key>
+```html
+<div id="face-scan"></div>
+<script src="https://SUA-API/static/sdk/face-identity.js"></script>
+<script>
+  FaceIdentity.enroll({
+    sessionId: "uuid-da-sessao",
+    sessionToken: "token-temporario",
+    mount: document.querySelector("#face-scan"),
+    autoComplete: true,
+    onProgress(result) {
+      console.log(result.coverage, result.next_hint, result.ready);
+    },
+    onSuccess(identity) {
+      console.log(identity.identity_id, identity.cpf_masked);
+    },
+    onError(error) {
+      console.error(error.code, error.message);
+    }
+  });
+</script>
 ```
 
-Entrada resumida:
-
-```json
-{
-  "privacidade": {
-    "rfb": { "id_template": "arkhe-template-v1" },
-    "senatran": { "token": "token-interno-opcional", "cnpj_anuente": "cnpj-opcional" }
-  },
-  "cpf": "00000000000",
-  "validacao": {
-    "nome": "Nome completo",
-    "data_nascimento": "2000-01-01",
-    "sexo": "M",
-    "nacionalidade": 1,
-    "rfb": { "situacao_cpf": "regular" },
-    "documento": { "tipo": 1, "numero": "000000000", "orgao_expedidor": "SSP", "uf_expedidor": "SP" }
-  },
-  "biometria_facial": { "imagem": "<BASE64>", "vivacidade": false },
-  "tag": "cadastro-banco-arkhe"
-}
-```
-
-`privacidade` existe apenas por compatibilidade estrutural. Nao representa autorizacao real da RFB ou Senatran. Ative `REQUIRE_PRIVACY_OBJECT=true` somente se quiser exigir a presenca do objeto no ambiente local.
-
-Saida resumida:
-
-```json
-{
-  "request_id": "uuid",
-  "provedor": "ARKHE_PRIVATE_REGISTRY",
-  "ambiente": "TCC",
-  "rfb_existe": true,
-  "cnh_existe": true,
-  "rfb": { "nome": true, "nome_similaridade": 1.0, "data_nascimento": true },
-  "biometria_facial": {
-    "disponivel": true,
-    "similaridade": 0.94,
-    "probabilidade": "ALTISSIMA",
-    "vivacidade": null,
-    "codigo_retorno": "ARKHE_FACE_OK"
-  },
-  "regra_local": {
-    "cadastro_confirmado": true,
-    "face_confirmada": true,
-    "validacao_combinada": true,
-    "limiar_facial": 0.85
-  },
-  "avisos": [
-    "Comparacao realizada exclusivamente com a base privada Banco Arkhe.",
-    "Nenhuma base governamental foi consultada.",
-    "Vivacidade nao foi verificada."
-  ]
-}
-```
-
-Se `vivacidade=true`, a API retorna 422 com `ARKHE_LIVENESS_NOT_SUPPORTED`.
-
-## Exemplos
-
-curl:
-
-```bash
-curl -X POST http://localhost:8000/v5/pessoa-fisica/validacao \
-  -H "Content-Type: application/json" \
-  -H "X-Arkhe-Api-Key: local-dev-api-key" \
-  -d @examples/request.json
-```
-
-PowerShell:
-
-```powershell
-Invoke-RestMethod -Method Post -Uri http://localhost:8000/v5/pessoa-fisica/validacao `
-  -Headers @{ "X-Arkhe-Api-Key" = "local-dev-api-key" } `
-  -ContentType "application/json" `
-  -Body (Get-Content .\examples\request.json -Raw)
-```
-
-JavaScript:
+Exemplo de verificacao:
 
 ```js
-await fetch("/v5/pessoa-fisica/validacao", {
-  method: "POST",
-  headers: { "Content-Type": "application/json", "X-Arkhe-Api-Key": "local-dev-api-key" },
-  body: JSON.stringify(payload)
+FaceIdentity.verify({
+  sessionId: "uuid-da-sessao",
+  sessionToken: "token-temporario",
+  mount: document.querySelector("#face-scan"),
+  onProgress(result) {
+    console.log(result.matched, result.similarity, result.threshold);
+  },
+  onSuccess(result) {
+    console.log(result.status);
+  },
+  onError(error) {
+    console.error(error);
+  }
 });
 ```
 
-Python:
+## Criar aplicacao cliente
 
-```python
-import requests
+```http
+POST /admin/client-applications
+Authorization: Bearer <admin-token>
+Content-Type: application/json
 
-requests.post(
-    "http://localhost:8000/v5/pessoa-fisica/validacao",
-    headers={"X-Arkhe-Api-Key": "local-dev-api-key"},
-    json=payload,
-    timeout=20,
-)
+{
+  "name": "Portal do Cliente",
+  "slug": "portal-cliente",
+  "client_secret": "segredo-longo-gerado-pelo-backend-cliente",
+  "allowed_origins": ["https://app.exemplo.local"]
+}
 ```
 
-## Seguranca e LGPD
+A API nao devolve `client_secret`. Ela armazena apenas o hash do segredo recebido.
 
-- Nao armazene CPF ou documento em texto puro.
-- Nao registre selfie, Base64, embedding, CPF completo ou payload sensivel nos logs.
-- Use chaves separadas: `DATA_ENCRYPTION_KEY`, `LOOKUP_HMAC_KEY`, `JWT_SECRET`, `ADMIN_PASSWORD_HASH`, `API_KEY_HASH`.
-- A caixa de consentimento nunca vem marcada.
-- Sem consentimento, nao cadastre biometria.
-- Revogacao e exclusao definitiva estao expostas no admin/API.
-- Use apenas pessoas ficticias ou participantes que aceitaram expressamente.
+## Criar sessao de cadastro
 
-## Calibracao
+```http
+POST /v1/enrollments
+X-Client-Id: portal-cliente
+X-Client-Secret: <client-secret>
+Content-Type: application/json
 
-CSV de entrada:
-
-```csv
-left_path,right_path,label
-foto_a1.jpg,foto_a2.jpg,genuine
-foto_a1.jpg,foto_b1.jpg,impostor
+{
+  "cpf": "52998224725",
+  "external_user_id": "user-123",
+  "display_name": "Pessoa Teste",
+  "consent": {
+    "accepted": true,
+    "version": "terms-v1",
+    "purpose": "Autenticacao facial"
+  }
+}
 ```
 
-Comando:
+Resposta:
 
-```powershell
-.\.venv\Scripts\python scripts\calibrate_threshold.py --pairs pares.csv --out calibration_report.csv
+```json
+{
+  "session_id": "uuid",
+  "session_token": "token-temporario",
+  "expires_at": "2026-08-09T18:00:00Z",
+  "scanner_url": "http://localhost:8000/admin/scanner?mode=enroll&session_id=uuid#token=token-temporario"
+}
 ```
 
-O relatorio usa identificadores anonimizados e calcula FAR/FRR por limiar.
+## Enviar captura
 
-## Troca futura para Datavalid
+```http
+POST /v1/enrollments/{session_id}/captures
+Authorization: Bearer <session-token>
+Content-Type: application/json
 
-O frontend do banco deve chamar sempre a mesma interface. No futuro, altere:
-
-```env
-IDENTITY_PROVIDER=private_registry
+{
+  "image_base64": "BASE64_DA_SELFIE"
+}
 ```
 
-para:
+Resposta:
 
-```env
-IDENTITY_PROVIDER=datavalid
+```json
+{
+  "session_id": "uuid",
+  "status": "ready",
+  "coverage": {
+    "frontal": 1.0,
+    "left": 0.91,
+    "right": 0.72,
+    "up": 0.78,
+    "down": 0.74
+  },
+  "quality_score": 0.72,
+  "coverage_score": 0.68,
+  "liveness_score": 0.83,
+  "next_hint": "hold_still",
+  "ready": true
+}
 ```
 
-`DatavalidProvider` esta propositalmente vazio, com TODOs. Ele nao chama o Datavalid agora e nao contem credenciais reais.
+## Enrollment adaptativo
+
+O enrollment nao percorre uma lista fixa de poses. A cada captura valida, o backend atualiza `coverage` por regiao:
+
+- `frontal`
+- `left`
+- `right`
+- `up`
+- `down`
+
+O estado anterior e comparado com a estimativa da captura atual. Cada regiao guarda a melhor cobertura aceita ate o momento. O `coverage_score` e a media dessas regioes.
+
+`next_hint` e sempre escolhido pela regiao mais deficiente:
+
+- menor `left` -> `turn_left`
+- menor `right` -> `turn_right`
+- menor `up` -> `turn_up`
+- menor `down` -> `turn_down`
+- menor `frontal` -> `center_face`
+- cobertura suficiente -> `complete`
+
+`ready=true` depende dos criterios biometricos, nao de contador:
+
+- cobertura minima por regiao: `0.65`
+- media minima de coverage: `0.72`
+- qualidade minima da melhor captura: `0.15`
+- existencia de embedding valido
+
+Observacao tecnica: a versao atual usa um estimador local limitado de pose/coverage a partir do frame. A arquitetura esta separada em `app/services/coverage.py` para trocar por um modelo real de landmarks/head pose sem mudar o contrato da API.
+
+## Liveness
+
+A implementacao atual de liveness e `PassiveLivenessService` (`passive-quality-v1`). Ela e deterministica e baseada em qualidade/face unica. Serve como ponto plugavel de arquitetura, mas nao e um modelo real de anti-spoofing e nao deve ser apresentada como protecao equivalente a Face ID da Apple.
+
+Para producao, substitua esse servico por um provider real de anti-spoofing/liveness.
+
+## Concluir cadastro
+
+```http
+POST /v1/enrollments/{session_id}/complete
+Authorization: Bearer <session-token>
+```
+
+A resposta inclui `identity_id`, `biometric_template_id` e `cpf_masked`.
+
+## Verificar identidade
+
+```http
+POST /v1/verifications
+X-Client-Id: portal-cliente
+X-Client-Secret: <client-secret>
+Content-Type: application/json
+
+{
+  "identity_id": "uuid",
+  "purpose": "login"
+}
+```
+
+Depois envie a selfie:
+
+```http
+POST /v1/verifications/{session_id}/attempts
+Authorization: Bearer <session-token>
+Content-Type: application/json
+
+{
+  "image_base64": "BASE64_DA_SELFIE"
+}
+```
 
 ## Deploy EasyPanel
 
-- Defina `DATABASE_URL` apontando para PostgreSQL externo.
-- Defina `PORT`.
-- Rode `alembic upgrade head` no start.
-- Use usuario nao root do Dockerfile.
-- Envie logs para stdout.
-- Nao habilite `DEBUG` em producao.
-- Garanta storage externo se decidir manter imagens, embora `STORE_REFERENCE_IMAGES=false` seja o padrao.
+- Use o reposititorio GitHub como source.
+- O EasyPanel usa o `Dockerfile` existente.
+- Conecte um PostgreSQL.
+- Configure as variaveis de `easypanel.env.example`.
+- Sem comprar dominio, use o dominio gerado pelo EasyPanel, por exemplo `https://apps-arkhe-identity-api.<seu-host>.easypanel.host`.
+- Health check recomendado: `GET /health`.
+- Porta interna: `8000`.
 
-## Verificacao Local Realizada
+## Seguranca
 
-Neste ambiente:
+- `client_secret` e credenciais admin nunca devem ir para o navegador.
+- CPF completo nao aparece em respostas; use `cpf_masked`.
+- Selfies e embeddings nao aparecem em logs nem respostas.
+- Tokens de sessao sao temporarios, hasheados no banco e separados por finalidade.
+- O limiar facial padrao deve ser calibrado com dados consentidos antes de uso real.
 
-- `ruff check .`: passou
-- `mypy app`: passou
-- `pytest`: 13 testes passaram
+## Verificacao local
 
-Docker nao estava acessivel no Windows local: o client nao encontrou `docker_engine`. Por isso, PostgreSQL via Docker e migrations contra Postgres nao foram executados nesta maquina.
+```powershell
+.\.venv\Scripts\python -m ruff check .
+.\.venv\Scripts\python -m mypy app
+.\.venv\Scripts\python -m pytest
+```

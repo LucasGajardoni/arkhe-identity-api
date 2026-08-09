@@ -19,17 +19,10 @@ class Settings(BaseSettings):
     jwt_secret: str = "development-only-jwt-secret"
     admin_username: str = "admin"
     admin_password_hash: str = ""
-    api_key_hash: str = ""
-    api_key_plaintext_for_local_only: str = "local-dev-api-key"
 
-    require_privacy_object: bool = False
-    text_similarity_threshold: float = 0.90
     facial_similarity_threshold: float = 0.85
     facial_threshold_experimental: bool = True
     max_image_size_mb: int = 3
-    store_reference_images: bool = False
-    reference_image_dir: str = "/tmp/arkhe-reference-images"
-    identity_provider: str = "private_registry"
     face_model_name: str = "opencv-yunet-sface"
     face_model_version: str = "YuNet-2023mar-SFace-2021dec"
     face_backend: str = "opencv"

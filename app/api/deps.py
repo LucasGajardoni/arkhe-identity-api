@@ -1,21 +1,32 @@
+import time
 from collections.abc import Generator
 
-from fastapi import Header, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.core.security import verify_access_token, verify_secret
+from app.db.models import ClientApplication
 from app.db.session import get_db
+from app.repositories.identity_repository import IdentityRepository
+
+_RATE_WINDOW_SECONDS = 60
+_RATE_MAX_REQUESTS = 10
+_rate_buckets: dict[str, list[float]] = {}
 
 
 def db_session() -> Generator[Session, None, None]:
     yield from get_db()
 
 
-def require_api_key(x_arkhe_api_key: str = Header(default="")) -> None:
-    settings = get_settings()
-    if not verify_secret(x_arkhe_api_key, settings.api_key_hash, settings.api_key_plaintext_for_local_only):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="API key invalida.")
+def require_client_application(
+    db: Session = Depends(db_session),
+    x_client_id: str = Header(default="", alias="X-Client-Id"),
+    x_client_secret: str = Header(default="", alias="X-Client-Secret"),
+) -> ClientApplication:
+    client = IdentityRepository(db).client_by_slug(x_client_id)
+    if client is None or not verify_secret(x_client_secret, client.secret_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciais da aplicacao cliente invalidas.")
+    return client
 
 
 def require_admin(request: Request) -> str:
@@ -25,3 +36,14 @@ def require_admin(request: Request) -> str:
     if not subject:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Autenticacao administrativa obrigatoria.")
     return subject
+
+
+def rate_limit(request: Request) -> None:
+    client = request.client.host if request.client else "unknown"
+    key = f"{client}:{request.url.path}"
+    now = time.monotonic()
+    bucket = [item for item in _rate_buckets.get(key, []) if now - item < _RATE_WINDOW_SECONDS]
+    if len(bucket) >= _RATE_MAX_REQUESTS:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Limite de requisicoes excedido.")
+    bucket.append(now)
+    _rate_buckets[key] = bucket

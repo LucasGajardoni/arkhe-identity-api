@@ -1,218 +1,103 @@
-from datetime import UTC, datetime
-from uuid import UUID
-
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
-from fastapi.encoders import jsonable_encoder
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import db_session, require_admin
 from app.core.config import get_settings
-from app.core.exceptions import ArkheError, http_error
-from app.core.security import create_access_token, decrypt_text, mask_cpf, verify_secret
-from app.db.models import ConsentRecord, FacialReference, ValidationAttempt
-from app.repositories.person_repository import PersonRepository
-from app.schemas.admin import DocumentCreate, LoginInput, PersonCreate, PersonUpdate, TokenOutput
-from app.services.facial import FacialService
-from app.services.files import decode_base64_image, load_image
+from app.core.security import create_access_token, verify_secret
+from app.db.models import AuditEvent, ClientApplication, Identity
+from app.repositories.identity_repository import IdentityRepository
+from app.schemas.identity import (
+    ClientApplicationCreate,
+    ClientApplicationCreated,
+    LoginInput,
+    TokenOutput,
+)
+from app.services.sessions import hash_client_secret
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory="app/templates")
 
 
-@router.get("", response_class=HTMLResponse, include_in_schema=False)
-def admin_home(request: Request) -> HTMLResponse:
+@router.get("", response_class=HTMLResponse)
+def admin_page(request: Request):
     return templates.TemplateResponse("admin.html", {"request": request})
 
 
-@router.get("/cliente-teste", response_class=HTMLResponse, include_in_schema=False)
-def test_client(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("client.html", {"request": request})
+@router.get("/scanner", response_class=HTMLResponse, name="scanner_page")
+def scanner_page(request: Request):
+    return templates.TemplateResponse("scanner.html", {"request": request})
 
 
 @router.post("/auth/login", response_model=TokenOutput)
-def login(payload: LoginInput) -> TokenOutput:
+def login(payload: LoginInput, response: Response):
     settings = get_settings()
     if payload.username != settings.admin_username or not verify_secret(payload.password, settings.admin_password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciais invalidas.")
-    return TokenOutput(access_token=create_access_token(payload.username))
+    token = create_access_token(payload.username)
+    response.set_cookie(
+        "arkhe_admin_token",
+        token,
+        httponly=True,
+        secure=not settings.debug,
+        samesite="lax",
+        max_age=7200,
+    )
+    return TokenOutput(access_token=token)
 
 
-@router.post("/pessoas", dependencies=[Depends(require_admin)])
-def create_person(payload: PersonCreate, db: Session = Depends(db_session)):
-    if not payload.consentimento.consentimento_aceito:
-        raise http_error("ARKHE_CONSENT_REQUIRED", "Consentimento explicito obrigatorio para cadastro biometrico.")
-    repo = PersonRepository(db)
-    person = repo.create_person(payload)
-    db.commit()
-    return {"id": person.id, "cpf_mascarado": mask_cpf(payload.cpf), "nome": person.nome}
-
-
-@router.get("/pessoas", dependencies=[Depends(require_admin)])
-def list_people(db: Session = Depends(db_session)):
-    return PersonRepository(db).list_people()
-
-
-@router.get("/pessoas/{person_id}", dependencies=[Depends(require_admin)])
-def get_person(person_id: UUID, db: Session = Depends(db_session)):
-    person = PersonRepository(db).get(person_id)
-    if not person:
-        raise HTTPException(status_code=404, detail="Pessoa nao encontrada.")
-    return {
-        "id": person.id,
-        "cpf_mascarado": mask_cpf(decrypt_text(person.cpf_encrypted)),
-        "nome": person.nome,
-        "nome_social": person.nome_social,
-        "data_nascimento": person.data_nascimento,
-        "sexo": person.sexo,
-        "nacionalidade": person.nacionalidade,
-        "nome_mae": person.nome_mae,
-        "nome_pai": person.nome_pai,
-        "situacao_cpf_interna": person.situacao_cpf_interna,
-        "email": person.email,
-        "telefone": person.telefone,
-        "status": person.status,
-        "consentimento_aceito_em": person.consentimento_aceito_em,
-        "documentos": [
-            {
-                "id": doc.id,
-                "tipo": doc.tipo,
-                "numero_mascarado": "***" + (decrypt_text(doc.numero_encrypted) or "")[-3:],
-                "orgao_expedidor": doc.orgao_expedidor,
-                "uf_expedidor": doc.uf_expedidor,
-            }
-            for doc in person.documents
-        ],
-    }
-
-
-@router.patch("/pessoas/{person_id}", dependencies=[Depends(require_admin)])
-def update_person(person_id: UUID, payload: PersonUpdate, db: Session = Depends(db_session)):
-    repo = PersonRepository(db)
-    person = repo.get(person_id)
-    if not person:
-        raise HTTPException(status_code=404, detail="Pessoa nao encontrada.")
-    repo.update(person, payload)
-    db.commit()
-    return {"id": person.id, "status": person.status}
-
-
-@router.delete("/pessoas/{person_id}", dependencies=[Depends(require_admin)])
-def delete_person(person_id: UUID, db: Session = Depends(db_session)):
-    repo = PersonRepository(db)
-    person = repo.get(person_id)
-    if not person:
-        raise HTTPException(status_code=404, detail="Pessoa nao encontrada.")
-    repo.delete_person(person)
-    db.commit()
-    return {"deleted": True}
-
-
-@router.post("/pessoas/{person_id}/documentos", dependencies=[Depends(require_admin)])
-def add_document(person_id: UUID, payload: DocumentCreate, db: Session = Depends(db_session)):
-    repo = PersonRepository(db)
-    person = repo.get(person_id)
-    if not person:
-        raise HTTPException(status_code=404, detail="Pessoa nao encontrada.")
-    doc = repo.add_document(person, payload)
-    db.commit()
-    return {"id": doc.id, "tipo": doc.tipo}
-
-
-@router.post("/pessoas/{person_id}/referencia-facial", dependencies=[Depends(require_admin)])
-async def add_face_reference(
-    person_id: UUID,
-    imagem: UploadFile | None = File(default=None),
-    imagem_base64: str | None = Form(default=None),
+@router.post("/client-applications", response_model=ClientApplicationCreated, status_code=201)
+def create_client_application(
+    payload: ClientApplicationCreate,
+    _: str = Depends(require_admin),
     db: Session = Depends(db_session),
 ):
-    repo = PersonRepository(db)
-    person = repo.get(person_id)
-    if not person:
-        raise HTTPException(status_code=404, detail="Pessoa nao encontrada.")
-    if not person.consentimento_aceito_em or any(cons.revogado_em for cons in person.consents):
-        raise http_error("ARKHE_CONSENT_REQUIRED", "Consentimento valido obrigatorio.")
-    try:
-        image = load_image(await imagem.read()) if imagem else decode_base64_image(imagem_base64 or "")
-        service = FacialService()
-        result = service.generate_embedding(image)
-        repo.revoke_facial_reference(person)
-        db.add(
-            FacialReference(
-                person_id=person.id,
-                embedding_encrypted=service.encrypt_embedding(result.embedding),
-                nome_modelo=get_settings().face_model_name,
-                versao_modelo=get_settings().face_model_version,
-                qualidade_referencia=result.quality,
-                imagem_referencia_armazenada=False,
-            )
-        )
-        db.commit()
-        return {"registered": True, "quality": result.quality, "stored_image": False}
-    except ArkheError as exc:
-        raise http_error(exc.code, exc.message) from exc
-
-
-@router.delete("/pessoas/{person_id}/referencia-facial", dependencies=[Depends(require_admin)])
-def revoke_face_reference(person_id: UUID, db: Session = Depends(db_session)):
-    repo = PersonRepository(db)
-    person = repo.get(person_id)
-    if not person:
-        raise HTTPException(status_code=404, detail="Pessoa nao encontrada.")
-    repo.revoke_facial_reference(person)
-    db.commit()
-    return {"revoked": True}
-
-
-@router.post("/pessoas/{person_id}/consentimentos", dependencies=[Depends(require_admin)])
-def add_consent(person_id: UUID, finalidade: str, versao_termo: str = "arkhe-consent-v1", db: Session = Depends(db_session)):
-    person = PersonRepository(db).get(person_id)
-    if not person:
-        raise HTTPException(status_code=404, detail="Pessoa nao encontrada.")
-    person.consentimento_aceito_em = datetime.now(UTC)
-    person.finalidade_consentimento = finalidade
-    person.versao_termo_consentimento = versao_termo
-    db.add(ConsentRecord(person_id=person.id, finalidade=finalidade, versao_termo=versao_termo))
-    db.commit()
-    return {"accepted": True}
-
-
-@router.post("/pessoas/{person_id}/consentimentos/revogar", dependencies=[Depends(require_admin)])
-def revoke_consent(person_id: UUID, db: Session = Depends(db_session)):
-    person = PersonRepository(db).get(person_id)
-    if not person:
-        raise HTTPException(status_code=404, detail="Pessoa nao encontrada.")
-    now = datetime.now(UTC)
-    for consent in person.consents:
-        if consent.revogado_em is None:
-            consent.revogado_em = now
-    db.commit()
-    return {"revoked": True}
-
-
-@router.get("/pessoas/{person_id}/exportacao", dependencies=[Depends(require_admin)])
-def export_person(person_id: UUID, db: Session = Depends(db_session)):
-    data = get_person(person_id, db)
-    return JSONResponse(
-        content=jsonable_encoder(data),
-        headers={"Content-Disposition": "attachment; filename=arkhe-person-export.json"},
+    if IdentityRepository(db).client_by_slug(payload.slug):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Slug ja cadastrado.")
+    client = IdentityRepository(db).create_client(
+        name=payload.name,
+        slug=payload.slug,
+        secret_hash=hash_client_secret(payload.client_secret),
+        allowed_origins="\n".join(payload.allowed_origins),
     )
+    db.commit()
+    return ClientApplicationCreated(id=client.id, name=client.name, slug=client.slug)
 
 
-@router.get("/auditoria", dependencies=[Depends(require_admin)])
-def audit(db: Session = Depends(db_session)):
-    attempts = db.scalars(select(ValidationAttempt).order_by(ValidationAttempt.criado_em.desc()).limit(200)).all()
+@router.get("/client-applications")
+def list_client_applications(_: str = Depends(require_admin), db: Session = Depends(db_session)):
+    clients = db.scalars(select(ClientApplication).order_by(ClientApplication.created_at.desc()).limit(200)).all()
     return [
         {
-            "request_id": item.request_id,
-            "criado_em": item.criado_em,
-            "resultado": item.resultado,
-            "codigo_retorno": item.codigo_retorno,
-            "similaridade_facial": item.similaridade_facial,
-            "sem_imagem": item.sem_imagem,
-            "sem_embedding": item.sem_embedding,
+            "id": client.id,
+            "name": client.name,
+            "slug": client.slug,
+            "is_active": client.is_active,
+            "created_at": client.created_at,
         }
-        for item in attempts
+        for client in clients
+    ]
+
+
+@router.get("/identities")
+def list_identities(_: str = Depends(require_admin), db: Session = Depends(db_session)):
+    identities = db.scalars(select(Identity).order_by(Identity.created_at.desc()).limit(200)).all()
+    return [IdentityRepository.public_identity(identity) for identity in identities]
+
+
+@router.get("/audit-events")
+def list_audit_events(_: str = Depends(require_admin), db: Session = Depends(db_session)):
+    events = db.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(200)).all()
+    return [
+        {
+            "id": event.id,
+            "client_application_id": event.client_application_id,
+            "identity_id": event.identity_id,
+            "event_type": event.event_type,
+            "outcome": event.outcome,
+            "created_at": event.created_at,
+        }
+        for event in events
     ]

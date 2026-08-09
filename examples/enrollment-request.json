@@ -1,0 +1,10 @@
+{
+  "cpf": "52998224725",
+  "external_user_id": "user-123",
+  "display_name": "Pessoa Teste",
+  "consent": {
+    "accepted": true,
+    "version": "terms-v1",
+    "purpose": "Autenticacao facial"
+  }
+}
