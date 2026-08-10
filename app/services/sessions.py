@@ -32,6 +32,8 @@ from app.services.facial import FacialService
 from app.services.files import decode_base64_image
 from app.services.liveness import PassiveLivenessService
 
+MAX_VERIFICATION_ATTEMPTS = 5
+
 
 def new_session_token() -> str:
     return secrets.token_urlsafe(32)
@@ -220,11 +222,22 @@ class IdentitySessionService:
         self.db.add(attempt)
         session.best_similarity = max(session.best_similarity or 0.0, similarity)
         session.matched = matched
-        session.status = "matched" if matched else "not_matched"
         capture_hashes.add(replay_hash)
         session.capture_hashes_json = dump_hashes(capture_hashes)
-        session.completed_at = datetime.now(UTC)
-        self.audit(session.client_application_id, session.identity_id, "verification.attempt", "matched" if matched else "not_matched")
+        if matched:
+            session.status = "matched"
+            session.completed_at = datetime.now(UTC)
+        elif len(capture_hashes) >= MAX_VERIFICATION_ATTEMPTS:
+            session.status = "not_matched"
+            session.completed_at = datetime.now(UTC)
+        else:
+            session.status = "capturing"
+        self.audit(
+            session.client_application_id,
+            session.identity_id,
+            "verification.attempt",
+            "matched" if matched else "not_matched",
+        )
         self.db.flush()
         return attempt
 

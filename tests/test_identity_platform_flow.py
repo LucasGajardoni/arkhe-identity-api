@@ -88,3 +88,24 @@ def test_verification_not_matched_and_threshold(client: TestClient, db: Session,
     assert attempt.status_code == 200
     assert attempt.json()["matched"] is False
     assert attempt.json()["threshold"] == 0.85
+
+
+def test_verification_mismatch_keeps_session_open_for_retry(client: TestClient, db: Session, monkeypatch):
+    identity_id, _ = complete_identity(client, db, monkeypatch)
+    monkeypatch.setattr("app.services.facial.FacialService.similarity", staticmethod(lambda _left, _right: 0.1))
+    session = client.post("/v1/verifications", headers=auth_headers(), json={"identity_id": identity_id}).json()
+    headers = {"Authorization": f"Bearer {session['session_token']}"}
+    first = client.post(
+        f"/v1/verifications/{session['session_id']}/attempts",
+        headers=headers,
+        json={"image_base64": image_base64((20, 40, 80))},
+    )
+    second = client.post(
+        f"/v1/verifications/{session['session_id']}/attempts",
+        headers=headers,
+        json={"image_base64": image_base64((40, 80, 120))},
+    )
+    assert first.status_code == 200
+    assert first.json()["status"] == "capturing"
+    assert second.status_code == 200
+    assert second.json()["matched"] is False
