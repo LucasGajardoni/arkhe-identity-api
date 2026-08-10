@@ -17,6 +17,7 @@ class FaceEmbeddingResult:
     embedding: np.ndarray
     quality: float
     face_count: int
+    pose_scores: dict[str, float] | None = None
 
 
 class FacialService:
@@ -61,7 +62,12 @@ class FacialService:
             raise ArkheError("ARKHE_LOW_IMAGE_QUALITY", "Imagem com qualidade insuficiente.")
         aligned = recognizer.alignCrop(array, faces[0])
         embedding = np.asarray(recognizer.feature(aligned), dtype=np.float32).reshape(-1)
-        return FaceEmbeddingResult(embedding=self._normalize(embedding), quality=quality, face_count=1)
+        return FaceEmbeddingResult(
+            embedding=self._normalize(embedding),
+            quality=quality,
+            face_count=1,
+            pose_scores=self._pose_scores_from_yunet_face(faces[0]),
+        )
 
     def _fake_embedding(self, image: Image.Image) -> FaceEmbeddingResult:
         if image.width < 12 or image.height < 12:
@@ -70,6 +76,43 @@ class FacialService:
         if pixels.std() < 1:
             raise ArkheError("ARKHE_LOW_IMAGE_QUALITY", "Imagem com qualidade insuficiente.")
         return FaceEmbeddingResult(embedding=self._normalize(pixels), quality=self._quality(image), face_count=1)
+
+    @staticmethod
+    def _pose_scores_from_yunet_face(face: np.ndarray) -> dict[str, float]:
+        _, _, w, h = [float(value) for value in face[:4]]
+        if w <= 0 or h <= 0:
+            return {}
+        landmarks = np.asarray(face[4:14], dtype=np.float32).reshape(5, 2)
+        right_eye, left_eye, nose, right_mouth, left_mouth = landmarks
+        eye_center = (right_eye + left_eye) / 2.0
+        mouth_center = (right_mouth + left_mouth) / 2.0
+        anchor_center = (eye_center + mouth_center) / 2.0
+
+        yaw = float((nose[0] - anchor_center[0]) / w)
+        pitch = float((nose[1] - anchor_center[1]) / h)
+        eye_distance = float(np.linalg.norm(left_eye - right_eye) / w)
+        mouth_distance = float(np.linalg.norm(left_mouth - right_mouth) / w)
+        landmark_balance = max(0.0, min(1.0, (eye_distance + mouth_distance) / 0.7))
+
+        yaw_strength = min(abs(yaw) * 5.0, 1.0)
+        pitch_strength = min(abs(pitch) * 5.0, 1.0)
+        frontal = max(0.15, 1.0 - (yaw_strength * 0.55) - (pitch_strength * 0.35))
+        left = 0.28 + (max(yaw, 0.0) * 4.2)
+        right = 0.28 + (max(-yaw, 0.0) * 4.2)
+        up = 0.28 + (max(-pitch, 0.0) * 4.2)
+        down = 0.28 + (max(pitch, 0.0) * 4.2)
+
+        scores = {
+            "frontal": frontal,
+            "left": left,
+            "right": right,
+            "up": up,
+            "down": down,
+        }
+        return {
+            key: round(max(0.0, min(1.0, value * (0.65 + landmark_balance * 0.35))), 4)
+            for key, value in scores.items()
+        }
 
     @staticmethod
     def _quality(image: Image.Image) -> float:

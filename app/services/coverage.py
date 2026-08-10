@@ -62,17 +62,35 @@ def estimate_pose_scores(image: Image.Image) -> dict[str, float]:
     return {key: round(max(0.0, min(1.0, value)), 4) for key, value in scores.items()}
 
 
-def update_coverage(current: dict[str, float], pose_scores: dict[str, float], quality: float) -> CoverageState:
+def update_coverage(
+    current: dict[str, float],
+    pose_scores: dict[str, float],
+    quality: float,
+    requested_hint: str | None = None,
+) -> CoverageState:
     quality_weight = 0.0 if quality < READY_MIN_QUALITY else 0.75 + (max(0.0, min(1.0, quality)) * 0.25)
     updated = empty_coverage()
+    target_key = hint_to_key(requested_hint)
     for key in COVERAGE_KEYS:
         accepted = max(0.0, min(1.0, pose_scores.get(key, 0.0))) * quality_weight
+        if key == target_key and quality >= READY_MIN_QUALITY:
+            accepted = max(accepted, min(1.0, current.get(key, 0.0) + 0.28))
         updated[key] = round(max(current.get(key, 0.0), accepted), 4)
     score = round(sum(updated.values()) / len(COVERAGE_KEYS), 4)
     weakest_key, weakest_value = min(updated.items(), key=lambda item: item[1])
     ready = min(updated.values()) >= READY_MIN_REGION and score >= READY_MIN_AVERAGE and quality >= READY_MIN_QUALITY
     next_hint = "complete" if ready else f"turn_{weakest_key}" if weakest_key != "frontal" else "center_face"
     return CoverageState(coverage=updated, score=score, next_hint=next_hint, ready=ready)
+
+
+def hint_to_key(hint: str | None) -> str | None:
+    return {
+        "center_face": "frontal",
+        "turn_left": "left",
+        "turn_right": "right",
+        "turn_up": "up",
+        "turn_down": "down",
+    }.get(hint or "")
 
 
 def coverage_ready(coverage: dict[str, float], quality: float) -> bool:

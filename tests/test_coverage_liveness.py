@@ -28,6 +28,13 @@ def test_next_hint_requests_right_when_right_is_weak():
     assert result.next_hint == "turn_right"
 
 
+def test_requested_hint_advances_target_region_for_valid_capture():
+    current = {"frontal": 0.82, "left": 0.28, "right": 0.16, "up": 0.29, "down": 0.16}
+    result = update_coverage(current, {"frontal": 0.8, "right": 0.18}, 0.65, requested_hint="turn_right")
+    assert result.coverage["right"] > current["right"]
+    assert result.next_hint != "turn_right"
+
+
 def test_ready_true_depends_on_coverage_not_order():
     coverage = {"frontal": 0.92, "left": 0.81, "right": 0.78, "up": 0.75, "down": 0.74}
     assert coverage_ready(coverage, 0.88) is True

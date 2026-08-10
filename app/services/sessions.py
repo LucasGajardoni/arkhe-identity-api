@@ -113,7 +113,13 @@ class IdentitySessionService:
             session.liveness_score = liveness.score
             self.audit(session.client_application_id, None, "enrollment.capture", "liveness_failed")
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Liveness insuficiente.")
-        coverage = update_coverage(load_coverage(session.coverage_json), estimate_pose_scores(image), result.quality)
+        pose_scores = result.pose_scores or estimate_pose_scores(image)
+        coverage = update_coverage(
+            load_coverage(session.coverage_json),
+            pose_scores,
+            result.quality,
+            requested_hint=session.next_hint,
+        )
         capture_hashes.add(replay_hash)
         session.captures_count += 1
         session.quality_score = max(session.quality_score, result.quality)
