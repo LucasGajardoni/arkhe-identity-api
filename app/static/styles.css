@@ -96,3 +96,38 @@ pre {
   padding: 12px;
   position: fixed;
 }
+
+
+.identity-item {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.identity-item span {
+  color: #667085;
+  font-size: 13px;
+}
+
+button.danger {
+  background: #fff;
+  border-color: #d92d20;
+  color: #b42318;
+  flex: 0 0 auto;
+}
+
+button.danger:hover {
+  background: #fff4f2;
+}
+
+@media (max-width: 640px) {
+  .identity-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .identity-item button {
+    width: 100%;
+  }
+}
