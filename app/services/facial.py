@@ -2,6 +2,7 @@ import json
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 import numpy as np
@@ -25,6 +26,7 @@ class FacialService:
         self.settings = get_settings()
         self._detector: Any = None
         self._recognizer: Any = None
+        self._lock = Lock()
 
     def _load_opencv(self, image: Image.Image):
         import cv2
@@ -50,18 +52,27 @@ class FacialService:
         import cv2
 
         array = cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)
-        detector, recognizer = self._load_opencv(image)
-        _, faces = detector.detect(array)
-        face_count = 0 if faces is None else len(faces)
-        if face_count == 0:
-            raise ArkheError("ARKHE_NO_FACE", "Nenhuma face detectada.")
-        if face_count > 1:
-            raise ArkheError("ARKHE_MULTIPLE_FACES", "Mais de uma face detectada.")
-        quality = self._quality(image)
-        if quality < 0.15:
-            raise ArkheError("ARKHE_LOW_IMAGE_QUALITY", "Imagem com qualidade insuficiente.")
-        aligned = recognizer.alignCrop(array, faces[0])
-        embedding = np.asarray(recognizer.feature(aligned), dtype=np.float32).reshape(-1)
+
+        # O detector e o reconhecedor sao reutilizados entre as requisicoes.
+        # O lock evita duas capturas mexendo no mesmo detector ao mesmo tempo.
+        with self._lock:
+            detector, recognizer = self._load_opencv(image)
+            _, faces = detector.detect(array)
+            face_count = 0 if faces is None else len(faces)
+
+            if face_count == 0:
+                raise ArkheError("ARKHE_NO_FACE", "Nenhuma face detectada.")
+
+            if face_count > 1:
+                raise ArkheError("ARKHE_MULTIPLE_FACES", "Mais de uma face detectada.")
+
+            quality = self._quality(image)
+
+            if quality < 0.15:
+                raise ArkheError("ARKHE_LOW_IMAGE_QUALITY", "Imagem com qualidade insuficiente.")
+
+            aligned = recognizer.alignCrop(array, faces[0])
+            embedding = np.asarray(recognizer.feature(aligned), dtype=np.float32).reshape(-1)
         return FaceEmbeddingResult(
             embedding=self._normalize(embedding),
             quality=quality,
