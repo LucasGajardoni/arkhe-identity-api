@@ -111,6 +111,13 @@ class VerificationAttemptResult(BaseModel):
     status: str
 
 
+class EnrollmentStatusResult(BaseModel):
+    enrollment_session_id: UUID
+    identity_id: UUID | None
+    status: str
+    expires_at: datetime
+
+
 class VerificationStatusResult(BaseModel):
     verification_session_id: UUID
     identity_id: UUID | None
