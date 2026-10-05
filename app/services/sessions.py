@@ -32,7 +32,7 @@ from app.services.facial import FacialService
 from app.services.files import decode_base64_image
 from app.services.liveness import PassiveLivenessService
 
-MAX_VERIFICATION_ATTEMPTS = 5
+MAX_VERIFICATION_ATTEMPTS = 3
 
 # Carrega YuNet/SFace uma vez e reaproveita nas capturas seguintes.
 _facial_service = FacialService()
