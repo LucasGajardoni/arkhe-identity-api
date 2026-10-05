@@ -105,6 +105,18 @@ class IdentityRepository:
         self.db.flush()
         return template
 
+    def revoke_active_templates(self, identity: Identity) -> int:
+        quantidade = 0
+
+        for template in identity.templates:
+            if template.status == "active":
+                template.status = "revoked"
+                template.revoked_at = datetime.now(UTC)
+                quantidade += 1
+
+        self.db.flush()
+        return quantidade
+
     @staticmethod
     def public_identity(identity: Identity) -> dict[str, object]:
         cpf = decrypt_text(identity.cpf_encrypted)
