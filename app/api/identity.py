@@ -4,13 +4,14 @@ from fastapi import APIRouter, Depends, Header, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps import db_session, rate_limit, require_client_application
-from app.db.models import ClientApplication, VerificationSession
+from app.db.models import ClientApplication, EnrollmentSession, VerificationSession
 from app.repositories.identity_repository import IdentityRepository
 from app.schemas.identity import (
     CaptureInput,
     CaptureResult,
     EnrollmentCompleted,
     EnrollmentStartRequest,
+    EnrollmentStatusResult,
     IdentityPublic,
     SessionCreated,
     VerificationAttemptResult,
@@ -78,6 +79,27 @@ def complete_enrollment(session_id: UUID, token: str = Depends(bearer_token), db
         biometric_template_id=template.id,
         cpf_masked=cpf_mask_from_identity(identity),
         status="completed",
+    )
+
+
+@router.get("/enrollments/{session_id}", response_model=EnrollmentStatusResult)
+def enrollment_status(
+    session_id: UUID,
+    db: Session = Depends(db_session),
+    client: ClientApplication = Depends(require_client_application),
+):
+    session = db.get(EnrollmentSession, session_id)
+
+    if session is None or session.client_application_id != client.id:
+        from fastapi import HTTPException, status
+
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sessao nao encontrada.")
+
+    return EnrollmentStatusResult(
+        enrollment_session_id=session.id,
+        identity_id=session.identity_id,
+        status=session.status,
+        expires_at=session.expires_at,
     )
 
 
