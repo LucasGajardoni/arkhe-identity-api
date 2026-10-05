@@ -111,6 +111,14 @@ class VerificationAttemptResult(BaseModel):
     status: str
 
 
+class VerificationStatusResult(BaseModel):
+    verification_session_id: UUID
+    identity_id: UUID | None
+    matched: bool | None
+    status: str
+    expires_at: datetime
+
+
 class IdentityPublic(BaseModel):
     id: UUID
     client_application_id: UUID
