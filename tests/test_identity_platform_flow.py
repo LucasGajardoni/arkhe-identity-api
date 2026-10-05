@@ -136,3 +136,28 @@ def test_verification_closes_after_three_mismatches(client: TestClient, db: Sess
     )
 
     assert quarta.status_code == 409
+
+
+def test_reset_biometric_requires_new_enrollment(client: TestClient, db: Session, monkeypatch):
+    identity_id, _ = complete_identity(client, db, monkeypatch)
+
+    admin_token = client.post(
+        "/admin/auth/login",
+        json={"username": "admin", "password": "admin-test"},
+    ).json()["access_token"]
+
+    reset = client.delete(
+        f"/admin/identities/{identity_id}/biometric-template",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    assert reset.status_code == 200
+
+    verification = client.post(
+        "/v1/verifications",
+        headers=auth_headers(),
+        json={"identity_id": identity_id, "purpose": "login"},
+    )
+
+    assert verification.status_code == 404
+    assert verification.json()["detail"] == "Biometria nao cadastrada."
