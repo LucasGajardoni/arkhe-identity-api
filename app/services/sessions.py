@@ -34,6 +34,9 @@ from app.services.liveness import PassiveLivenessService
 
 MAX_VERIFICATION_ATTEMPTS = 5
 
+# Carrega YuNet/SFace uma vez e reaproveita nas capturas seguintes.
+_facial_service = FacialService()
+
 
 def new_session_token() -> str:
     return secrets.token_urlsafe(32)
@@ -73,7 +76,7 @@ class IdentitySessionService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.repo = IdentityRepository(db)
-        self.faces = FacialService()
+        self.faces = _facial_service
         self.liveness = PassiveLivenessService()
         self.settings = get_settings()
 
