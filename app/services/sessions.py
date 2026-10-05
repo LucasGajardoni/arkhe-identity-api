@@ -181,6 +181,10 @@ class IdentitySessionService:
             identity = self.repo.find_identity_by_cpf(client.id, request.cpf)
         if identity is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Identidade nao encontrada.")
+
+        if self.active_template(identity) is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Biometria nao cadastrada.")
+
         token = new_session_token()
         session = VerificationSession(
             client_application_id=client.id,
