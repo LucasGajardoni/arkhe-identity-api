@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Header, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps import db_session, rate_limit, require_client_application
-from app.db.models import ClientApplication
+from app.db.models import ClientApplication, VerificationSession
 from app.repositories.identity_repository import IdentityRepository
 from app.schemas.identity import (
     CaptureInput,
@@ -15,6 +15,7 @@ from app.schemas.identity import (
     SessionCreated,
     VerificationAttemptResult,
     VerificationStartRequest,
+    VerificationStatusResult,
 )
 from app.services.coverage import load_coverage
 from app.services.sessions import IdentitySessionService, cpf_mask_from_identity
@@ -120,6 +121,28 @@ def attempt_verification(
         quality_score=attempt.quality_score,
         liveness_score=attempt.liveness_score,
         status=session.status,
+    )
+
+
+@router.get("/verifications/{session_id}", response_model=VerificationStatusResult)
+def verification_status(
+    session_id: UUID,
+    db: Session = Depends(db_session),
+    client: ClientApplication = Depends(require_client_application),
+):
+    session = db.get(VerificationSession, session_id)
+
+    if session is None or session.client_application_id != client.id:
+        from fastapi import HTTPException, status
+
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sessao nao encontrada.")
+
+    return VerificationStatusResult(
+        verification_session_id=session.id,
+        identity_id=session.identity_id,
+        matched=session.matched,
+        status=session.status,
+        expires_at=session.expires_at,
     )
 
 
