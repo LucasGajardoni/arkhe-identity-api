@@ -11,10 +11,12 @@ from app.schemas.identity import (
     CaptureResult,
     EnrollmentCompleted,
     EnrollmentStartRequest,
+    EnrollmentStatus,
     IdentityPublic,
     SessionCreated,
     VerificationAttemptResult,
     VerificationStartRequest,
+    VerificationStatus,
 )
 from app.services.coverage import load_coverage
 from app.services.sessions import IdentitySessionService, cpf_mask_from_identity
@@ -68,6 +70,16 @@ def capture_enrollment(
     )
 
 
+@router.get("/enrollments/{session_id}", response_model=EnrollmentStatus)
+def enrollment_status(session_id: UUID, token: str = Depends(bearer_token), db: Session = Depends(db_session)):
+    session = IdentitySessionService(db).get_enrollment(session_id, token)
+    return EnrollmentStatus(
+        session_id=session.id,
+        identity_id=session.identity_id,
+        status=session.status,
+    )
+
+
 @router.post("/enrollments/{session_id}/complete", response_model=EnrollmentCompleted)
 def complete_enrollment(session_id: UUID, token: str = Depends(bearer_token), db: Session = Depends(db_session)):
     identity, template = IdentitySessionService(db).complete_enrollment(session_id, token)
@@ -95,6 +107,17 @@ def start_verification(
         session_token=token,
         expires_at=session.expires_at,
         scanner_url=str(request.url_for("scanner_page")) + f"?mode=verify&session_id={session.id}#token={token}",
+    )
+
+
+@router.get("/verifications/{session_id}", response_model=VerificationStatus)
+def verification_status(session_id: UUID, token: str = Depends(bearer_token), db: Session = Depends(db_session)):
+    session = IdentitySessionService(db).get_verification(session_id, token)
+    return VerificationStatus(
+        verification_session_id=session.id,
+        identity_id=session.identity_id,
+        matched=session.matched,
+        status=session.status,
     )
 
 
