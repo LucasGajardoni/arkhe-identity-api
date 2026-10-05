@@ -113,6 +113,8 @@
         : `/v1/enrollments/${options.sessionId}/captures`;
 
     let closed = false;
+    let capturing = false;
+
     const cleanup = () => {
       closed = true;
       camera.stop();
@@ -122,14 +124,20 @@
     try {
       await camera.start();
       ui.captureButton.addEventListener("click", async () => {
-        if (closed) return;
+        if (closed || capturing) return;
+        capturing = true;
+
         try {
           const imageBase64 = camera.capture();
           const result = await transport.post(capturePath, options.sessionToken, { image_base64: imageBase64 });
           options.onProgress?.(result);
           ui.setStatus(result.next_hint || result.status);
+
           if (mode === "verify") {
-            cleanup();
+            if (result.matched || result.status === "not_matched") {
+              cleanup();
+            }
+
             options.onSuccess?.(result);
           } else if (result.ready && options.autoComplete) {
             const complete = await transport.post(`/v1/enrollments/${options.sessionId}/complete`, options.sessionToken);
@@ -139,6 +147,8 @@
         } catch (error) {
           options.onError?.(error);
           ui.setStatus(error.message);
+        } finally {
+          capturing = false;
         }
       });
       ui.stopButton.addEventListener("click", cleanup);
