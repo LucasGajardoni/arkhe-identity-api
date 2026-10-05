@@ -1,3 +1,4 @@
+import hashlib
 import time
 from collections.abc import Generator
 
@@ -39,13 +40,28 @@ def require_admin(request: Request) -> str:
 
 
 def rate_limit(request: Request) -> None:
-    client = request.client.host if request.client else "unknown"
     route = request.scope.get("route")
     route_path = getattr(route, "path", request.url.path)
-    key = f"{client}:{route_path}"
+
+    authorization = request.headers.get("authorization", "")
+    client_id = request.headers.get("x-client-id", "")
+
+    if authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ").strip()
+        identificador = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
+    elif client_id:
+        identificador = client_id
+    else:
+        identificador = request.client.host if request.client else "unknown"
+
+    limite = 120 if route_path.endswith("/attempts") or route_path.endswith("/captures") else 60
+    key = f"{identificador}:{route_path}"
     now = time.monotonic()
+
     bucket = [item for item in _rate_buckets.get(key, []) if now - item < _RATE_WINDOW_SECONDS]
-    if len(bucket) >= _RATE_MAX_REQUESTS:
+
+    if len(bucket) >= limite:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Limite de requisicoes excedido.")
+
     bucket.append(now)
     _rate_buckets[key] = bucket
