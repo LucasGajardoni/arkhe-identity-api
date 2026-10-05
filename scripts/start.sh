@@ -3,7 +3,20 @@ set -eu
 
 echo "Starting Arkhe Identity API..."
 echo "Checking database migrations..."
-alembic upgrade head
+
+tentativa=1
+
+while ! alembic upgrade head; do
+    if [ "$tentativa" -ge 10 ]; then
+        echo "Database migrations failed after 10 attempts."
+        exit 1
+    fi
+
+    echo "Database unavailable. Retrying migration in 3 seconds... ($tentativa/10)"
+    tentativa=$((tentativa + 1))
+    sleep 3
+done
+
 echo "Database migrations are up to date."
 
 exec uvicorn app.main:app \
