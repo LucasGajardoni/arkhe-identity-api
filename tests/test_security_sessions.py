@@ -137,7 +137,7 @@ def test_multiple_faces_error_is_returned(client: TestClient, db: Session, monke
 
 def test_rate_limiting(client: TestClient, db: Session):
     create_client_app(db)
-    responses = [client.post("/v1/enrollments", headers=auth_headers(), json={}) for _ in range(11)]
+    responses = [client.post("/v1/enrollments", headers=auth_headers(), json={}) for _ in range(61)]
     assert responses[-1].status_code == 429
 
 
