@@ -87,6 +87,44 @@ def list_identities(_: str = Depends(require_admin), db: Session = Depends(db_se
     return [IdentityRepository.public_identity(identity) for identity in identities]
 
 
+@router.delete("/identities/{identity_id}/biometric-template")
+def reset_identity_biometric(
+    identity_id: str,
+    _: str = Depends(require_admin),
+    db: Session = Depends(db_session),
+):
+    try:
+        from uuid import UUID
+        identity_uuid = UUID(identity_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Identidade invalida.")
+
+    repo = IdentityRepository(db)
+    identity = repo.get_identity(identity_uuid)
+
+    if identity is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Identidade nao encontrada.")
+
+    quantidade = repo.revoke_active_templates(identity)
+
+    if quantidade == 0:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esta identidade ja esta sem biometria ativa.")
+
+    db.add(AuditEvent(
+        client_application_id=identity.client_application_id,
+        identity_id=identity.id,
+        event_type="biometric.reset",
+        outcome="ok",
+    ))
+    db.commit()
+
+    return {
+        "mensagem": "Biometria resetada. No proximo acesso sera necessario cadastrar o rosto novamente.",
+        "identity_id": identity.id,
+        "templates_revogados": quantidade,
+    }
+
+
 @router.get("/audit-events")
 def list_audit_events(_: str = Depends(require_admin), db: Session = Depends(db_session)):
     events = db.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(200)).all()
