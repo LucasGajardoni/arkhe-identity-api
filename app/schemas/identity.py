@@ -81,6 +81,12 @@ class EnrollmentCompleted(BaseModel):
     status: str
 
 
+class EnrollmentStatus(BaseModel):
+    session_id: UUID
+    identity_id: UUID | None
+    status: str
+
+
 class VerificationStartRequest(BaseModel):
     identity_id: UUID | None = None
     cpf: str | None = None
@@ -108,6 +114,13 @@ class VerificationAttemptResult(BaseModel):
     threshold: float
     quality_score: float
     liveness_score: float | None
+    status: str
+
+
+class VerificationStatus(BaseModel):
+    verification_session_id: UUID
+    identity_id: UUID | None
+    matched: bool | None
     status: str
 
 
