@@ -109,3 +109,30 @@ def test_verification_mismatch_keeps_session_open_for_retry(client: TestClient, 
     assert first.json()["status"] == "capturing"
     assert second.status_code == 200
     assert second.json()["matched"] is False
+
+
+def test_verification_closes_after_three_mismatches(client: TestClient, db: Session, monkeypatch):
+    identity_id, _ = complete_identity(client, db, monkeypatch)
+    monkeypatch.setattr("app.services.facial.FacialService.similarity", staticmethod(lambda _left, _right: 0.1))
+
+    session = client.post("/v1/verifications", headers=auth_headers(), json={"identity_id": identity_id}).json()
+    headers = {"Authorization": f"Bearer {session['session_token']}"}
+
+    for cor in ((20, 40, 80), (40, 80, 120), (80, 120, 160)):
+        resposta = client.post(
+            f"/v1/verifications/{session['session_id']}/attempts",
+            headers=headers,
+            json={"image_base64": image_base64(cor)},
+        )
+
+    assert resposta.status_code == 200
+    assert resposta.json()["matched"] is False
+    assert resposta.json()["status"] == "not_matched"
+
+    quarta = client.post(
+        f"/v1/verifications/{session['session_id']}/attempts",
+        headers=headers,
+        json={"image_base64": image_base64((120, 160, 200))},
+    )
+
+    assert quarta.status_code == 409
