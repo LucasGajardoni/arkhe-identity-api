@@ -40,7 +40,9 @@ def require_admin(request: Request) -> str:
 
 def rate_limit(request: Request) -> None:
     client = request.client.host if request.client else "unknown"
-    key = f"{client}:{request.url.path}"
+    route = request.scope.get("route")
+    route_path = getattr(route, "path", request.url.path)
+    key = f"{client}:{route_path}"
     now = time.monotonic()
     bucket = [item for item in _rate_buckets.get(key, []) if now - item < _RATE_WINDOW_SECONDS]
     if len(bucket) >= _RATE_MAX_REQUESTS:
