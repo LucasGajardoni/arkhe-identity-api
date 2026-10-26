@@ -23,7 +23,11 @@ templates = Jinja2Templates(directory="app/templates")
 
 @router.get("", response_class=HTMLResponse)
 def admin_page(request: Request):
-    return templates.TemplateResponse("admin.html", {"request": request})
+    page = templates.TemplateResponse("admin.html", {"request": request})
+    # Evita manter no navegador um HTML apontando para scripts obsoletos.
+    page.headers["Cache-Control"] = "no-store, max-age=0"
+    page.headers["Pragma"] = "no-cache"
+    return page
 
 
 @router.get("/scanner", response_class=HTMLResponse, name="scanner_page")
